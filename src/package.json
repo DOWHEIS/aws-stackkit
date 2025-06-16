@@ -4,7 +4,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "aws-corps-api-sdk": "dist/bin.js"
+    "aws-stackkit": "dist/bin.js"
   },
   "scripts": {
     "clean": "rm -rf dist",
