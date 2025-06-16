@@ -1,0 +1,47 @@
+{
+  "name": "aws-stackkit",
+  "version": "1.0.33",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "aws-corps-api-sdk": "dist/bin.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc && npm run copy-templates",
+    "copy-templates": "cp -r ./templates dist/templates/",
+    "dev:scaffold": "tsx src/bin.ts scaffold",
+    "dev:migrate": "tsx src/bin.ts migrate",
+    "dev:core:init": "tsx src/bin.ts core:init",
+    "dev": "SDK_DEV_SERVER=1 tsx src/bin.ts dev"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-rds-data": "^3.817.0",
+    "@aws-sdk/client-secrets-manager": "^3.826.0",
+    "aws-lambda": "^1.0.7",
+    "commander": "^14.0.0",
+    "dotenv": "^16.5.0",
+    "fs-extra": "^11.3.0",
+    "mustache": "^4.2.0",
+    "pg": "^8.16.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.149",
+    "@types/fs-extra": "^11.0.4",
+    "@types/madge": "^5.0.3",
+    "@types/mustache": "^4.2.6",
+    "@types/node": "^22.15.24",
+    "@types/pg": "^8.15.2"
+  },
+  "files": [
+    "dist/",
+    "../README.md"
+  ]
+}
