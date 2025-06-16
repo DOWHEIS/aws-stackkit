@@ -225,3 +225,12 @@ npx aws-stackkit dev
 ```
 
 Migrations are tracked so they won’t run twice. Just keep adding new numbered files. Never rename or delete old ones.
+
+## Why I Built This
+
+At the university I work for, we manage lots of internal projects, and each one usually needs its own API. With new student developers joining regularly, it was hard to keep things consistent and fast without spending tons of time on AWS setup, migrations, and boilerplate.
+
+We needed an opinionated framework to help projects get up and running quickly, with real AWS infrastructure, clean TypeScript, and best practices baked in.
+
+This was built to solve that and I thought it might help others too. It's not meant to be a full-fledged framework but a lightweight way to get a serverless aws API up and running quickly, with a major focus on developer experience and simplicity.
+
