@@ -7,17 +7,20 @@ import {
     COMMON_CLUSTER_ARN,
     COMMON_SECRET_ARN
 } from '../helpers/globalConfig.js'
+import { createLogger } from '../services/LoggerService.js'
+
+const logger = createLogger('Migrate')
 
 export async function migrate() {
     try {
         const { config } = await loadConfig()
 
         if (!config.database) {
-            console.log('No database configured - skipping migrations')
+            logger.info('No database configured - skipping migrations')
             return
         }
 
-        console.log(`Running migrations for database: ${config.database.name}`)
+        logger.info(`Running migrations for database: ${config.database.name}`)
 
         const dataApi = new RDSDataClient({})
 
@@ -30,7 +33,7 @@ export async function migrate() {
             }))
         }
 
-        console.log('Ensuring migrations table exists...')
+        logger.info('Ensuring migrations table exists...')
         await exec(`
             CREATE TABLE IF NOT EXISTS _migrations (
               id TEXT PRIMARY KEY,
@@ -42,21 +45,21 @@ export async function migrate() {
         const migrationsDir = path.resolve(migrationsPath)
 
         if (!await fs.pathExists(migrationsDir)) {
-            console.log(`No migrations directory found at: ${migrationsDir}`)
-            console.log('Create migrations directory and add .sql files')
+            logger.error(`No migrations directory found at: ${migrationsDir}`)
+            logger.error('Create migrations directory and add .sql files')
             return
         }
 
         const files = (await readdir(migrationsDir))
             .filter(f => f.endsWith('.sql'))
-            .sort() // Run in alphabetical order
+            .sort()
 
         if (files.length === 0) {
-            console.log('No migration files found')
+            logger.error('No migration files found')
             return
         }
 
-        console.log(`Found ${files.length} migration files`)
+        logger.info(`Found ${files.length} migration files`)
 
         let ranCount = 0
         for (const file of files) {
@@ -71,32 +74,32 @@ export async function migrate() {
             }))
 
             if (records && records.length) {
-                console.log(`Skipping ${id} (already run)`)
+                logger.info(`Skipping ${id} (already run)`)
                 continue
             }
 
-            console.log(`Running ${id}...`)
+            logger.info(`Running ${id}...`)
             const sql = await readFile(path.join(migrationsDir, file), 'utf-8')
 
             try {
                 await exec(sql)
                 await exec(`INSERT INTO _migrations (id) VALUES ('${id}')`)
-                console.log(`Completed ${id}`)
+                logger.success(`Completed ${id}`)
                 ranCount++
             } catch (error) {
-                console.error(`Failed to run ${id}:`, error)
+                logger.error(`Failed to run ${id}:`, error)
                 process.exit(1)
             }
         }
 
         if (ranCount === 0) {
-            console.log('All migrations are up to date')
+            logger.info('All migrations are up to date')
         } else {
-            console.log(`Successfully ran ${ranCount} migration(s)`)
+            logger.success(`Successfully ran ${ranCount} migration(s)`)
         }
 
     } catch (error) {
-        console.error('Migration failed:', error)
+        logger.error('Migration failed:', error)
         process.exit(1)
     }
 }

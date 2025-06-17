@@ -26,25 +26,6 @@ export function buildRouter(config: ApiConfig) {
         return { method: r.method, matcher, keys, lambdaPath }
     })
 
-    const hasAuth = (config.routes || []).some(r => (r as any).auth)
-    if (hasAuth) {
-        routes = [
-            ...routes,
-            {
-                method: 'GET',
-                matcher: /^\/auth\/prelogin$/,
-                keys: [],
-                lambdaPath: 'cdk/wrapped/__internal__/auth_login/index.ts',
-            },
-            {
-                method: 'GET',
-                matcher: /^\/auth\/approve$/,
-                keys: [],
-                lambdaPath: 'cdk/wrapped/__internal__/auth_approve/index.ts',
-            }
-        ]
-    }
-
     return {
         match(path: string, method: string): MatchResult | null {
             for (const r of routes) {

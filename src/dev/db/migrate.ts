@@ -2,7 +2,9 @@ import { Client } from 'pg'
 import fs from 'fs/promises'
 import path from 'path'
 import type { DatabaseConfig } from '../../api/types.js'
+import { createLogger } from '../../services/LoggerService.js'
 
+const logger = createLogger('Dev:Migrate')
 export async function runMigrations(config: DatabaseConfig) {
     const client = new Client({
         host: 'localhost',
@@ -15,7 +17,7 @@ export async function runMigrations(config: DatabaseConfig) {
     try {
         await client.connect()
     } catch (err) {
-        console.error('Failed to connect to Postgres:', err)
+        logger.error('Failed to connect to Postgres:', err)
         throw err
     }
 
@@ -35,14 +37,14 @@ export async function runMigrations(config: DatabaseConfig) {
             [file]
         )
         if (already.rowCount) {
-            console.log(`Migration already run: ${file}`)
+            logger.info(`Migration already run: ${file}`)
             continue
         }
 
         const content = await fs.readFile(path.join(config.migrationsPath, file), 'utf-8')
         await client.query(content)
         await client.query(`INSERT INTO _migrations (id) VALUES ($1)`, [file])
-        console.log(`Ran migration: ${file}`)
+        logger.info(`Ran migration: ${file}`)
     }
 
     await client.end()

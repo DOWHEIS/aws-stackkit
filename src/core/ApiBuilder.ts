@@ -9,10 +9,12 @@ import { CdkJsonGenerator } from '../generators/CdkJsonGenerator.js'
 import { HandlerWrapperGenerator } from '../generators/HandlerWrapperGenerator.js'
 import { AuthGenerator } from '../generators/AuthGenerator.js'
 import {HelpersGenerator} from "../generators/HelpersGenerator.js";
+import {createLogger} from "../services/LoggerService.js";
 
 export class ApiBuilder {
     private readonly templateService: TemplateService
     private readonly generators: Generator[]
+    private logger = createLogger('Core:ApiBuilder')
 
     constructor(private readonly api: ApiDefinition) {
         this.templateService = new TemplateService()
@@ -20,8 +22,8 @@ export class ApiBuilder {
     }
 
     async generate(outputDir: string): Promise<void> {
-        console.log(`Generating infrastructure for ${this.api.name}...`)
-        console.log(`${this.api.routes.length} routes, ${this.api.hasAuth() ? 'with' : 'without'} auth, ${this.api.hasDatabase() ? 'with' : 'without'} database`)
+        this.logger.info(`Generating infrastructure for ${this.api.name}...`)
+        this.logger.info(`${this.api.routes.length} routes, ${this.api.hasAuth() ? 'with' : 'without'} auth, ${this.api.hasDatabase() ? 'with' : 'without'} database`)
 
         let generatedCount = 0
 
@@ -30,20 +32,20 @@ export class ApiBuilder {
                 await generator.generate(this.api, outputDir)
                 generatedCount++
             } catch (error) {
-                console.error(`Failed to run ${generator.constructor.name}:`, error)
+                this.logger.error(`Failed to run ${generator.constructor.name}:`, error)
                 throw error
             }
         }
 
-        console.log(`Generated complete infrastructure in ${outputDir}`)
-        console.log(`${generatedCount} generators completed successfully`)
+        this.logger.success(`Generated complete infrastructure in ${outputDir}`)
+        this.logger.success(`${generatedCount} generators completed successfully`)
         this.printNextSteps(outputDir)
     }
 
     private createGenerators(): Generator[] {
         const generators: Generator[] = []
 
-        console.log('Planning generation...')
+        this.logger.info('Planning generation...')
 
         generators.push(
             new CdkStackGenerator(this.templateService),
@@ -53,38 +55,35 @@ export class ApiBuilder {
             new CdkJsonGenerator(this.templateService),
             new HelpersGenerator()
         )
-        console.log('  Core CDK files')
+        this.logger.info('  Core CDK files')
 
         generators.push(new HandlerWrapperGenerator())
-        console.log('  Handler wrappers')
+        this.logger.info('  Handler wrappers')
 
         if (this.api.hasAuth()) {
             generators.push(new AuthGenerator())
-            console.log('  Auth components (SSO enabled)')
+            this.logger.info('  Auth components (SSO enabled)')
         }
 
-        console.log(`${generators.length} generators ready`)
+        this.logger.info(`${generators.length} generators ready`)
         return generators
     }
 
     private printNextSteps(outputDir: string): void {
-        console.log('\nScaffolding complete!')
-        console.log('\nNext steps:')
-        console.log(`  cd ${outputDir}`)
-        console.log('  npm install')
-        console.log('  npm run synth     # Generate CloudFormation')
-        console.log('  npm run deploy    # Deploy to AWS')
+        this.logger.success('\nScaffolding complete!')
+        this.logger.info('\nNext steps:')
+        this.logger.info(`  check ${outputDir} for generated files`)
+        this.logger.info(`  for deployment, run: cdk deploy in ${outputDir} or use the deploy command in the CLI`)
+
 
         if (this.api.hasAuth()) {
-            console.log('\nAuth is enabled:')
-            console.log('  - SSO login will be available at /auth/prelogin')
-            console.log('  - Auth approval at /auth/approve')
+            this.logger.info('\nAuth is enabled:')
         }
 
         if (this.api.hasDatabase()) {
-            console.log('\nDatabase is configured:')
-            console.log(`  - Database: ${this.api.database!.name}`)
-            console.log('  - Connection details will be available via environment variables')
+            this.logger.info('\nDatabase is configured:')
+            this.logger.info(`  - Database: ${this.api.database!.name}`)
+            this.logger.info('  - Connection details will be available via environment variables')
         }
     }
 

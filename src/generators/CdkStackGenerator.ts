@@ -111,21 +111,18 @@ ${baseConfig}${vpcConfig}${envConfig}
     private getLambdaEnvConfig(api: ApiDefinition, route: RouteConfig): string {
         const envVars: string[] = []
 
-        // Add global environment variables
         if (api.environment) {
             Object.entries(api.environment).forEach(([key, value]) => {
                 envVars.push(`        ${key}: '${value}',`)
             })
         }
 
-        // Add route-specific environment variables
         if (route.environment) {
             Object.entries(route.environment).forEach(([key, value]) => {
                 envVars.push(`        ${key}: '${value}',`)
             })
         }
 
-        // Add database environment variables
         if (api.hasDatabase()) {
             const dbName = this.sanitizeDbName(api.database!.name)
             envVars.push(
@@ -164,7 +161,6 @@ ${envVars.join('\n')}
     }
 }
 
-// Separate class to handle the complex route building logic
 class RouteBuilder {
     private lines: string[] = []
     private resourceMap = new Map<string, string>()

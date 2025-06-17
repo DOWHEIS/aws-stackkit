@@ -1,5 +1,8 @@
 import path from 'path'
 import { spawn } from 'child_process'
+import { createLogger } from '../services/LoggerService.js'
+
+const logger = createLogger('Dev')
 
 export async function dev() {
     const devScript = path.resolve('../src/dev/server.ts')
@@ -14,7 +17,7 @@ export async function dev() {
 
     proc.on('exit', (code) => {
         if (code !== 0) {
-            console.error(`Dev server exited with code ${code}`)
+            logger.error(`Dev server exited with code ${code}`)
         }
     })
 }

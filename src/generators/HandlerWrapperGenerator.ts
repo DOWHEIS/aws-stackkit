@@ -4,9 +4,12 @@ import { Generator } from './Generator.js'
 import { ApiDefinition } from '../models/ApiDefinition.js'
 import { DependencyBundler } from '../services/DependencyBundler.js'
 import type { RouteConfig } from '../api/types.js'
+import {createLogger} from "../services/LoggerService.js";
 
 export class HandlerWrapperGenerator implements Generator {
     private bundler = new DependencyBundler()
+    private logger = createLogger('Generator:HandlerWrapper')
+
 
     async generate(api: ApiDefinition, outputDir: string): Promise<void> {
         const wrappedDir = path.join(outputDir, 'wrapped')
@@ -33,9 +36,9 @@ export class HandlerWrapperGenerator implements Generator {
 
         await this.updateMainPackageJson(outputDir, allNpmDependencies)
 
-        console.log(`Generated wrapped handlers for ${api.routes.length} routes`)
+        this.logger.info(`Generated wrapped handlers for ${api.routes.length} routes`)
         if (allNpmDependencies.size > 0) {
-            console.log(`Collected ${allNpmDependencies.size} unique npm dependencies`)
+            this.logger.info(`Collected ${allNpmDependencies.size} unique npm dependencies`)
         }
     }
 
@@ -45,10 +48,8 @@ export class HandlerWrapperGenerator implements Generator {
 
         await fs.ensureDir(routeDir)
 
-        console.log(`Bundling dependencies for ${routeName}...`)
+        this.logger.info(`Bundling dependencies for ${routeName}...`)
         const bundleResult = await this.bundler.bundleHandler(route.lambda, routeDir, wrappedDir)
-
-        // await this.patchSdkImports(bundleResult.entryFile)
 
         const authFnSource = api.config.auth ? api.config.auth.toString() : undefined;
         await this.generateWrapperIndex(route, routeDir, authFnSource);
@@ -56,20 +57,9 @@ export class HandlerWrapperGenerator implements Generator {
         const totalDeps = bundleResult.npmDependencies.length +
             (bundleResult.addedDependencies ? Object.keys(bundleResult.addedDependencies).length : 0)
 
-        console.log(`Wrapped handler for "${route.path}" → wrapped/${routeName}/ (${bundleResult.copiedFiles.length} files, ${totalDeps} total deps)`)
+        this.logger.success(`Wrapped handler for "${route.path}" → wrapped/${routeName}/ (${bundleResult.copiedFiles.length} files, ${totalDeps} total deps)`)
 
         return bundleResult
-    }
-
-    private async patchSdkImports(handlerPath: string): Promise<void> {
-        let handlerSource = await fs.readFile(handlerPath, 'utf-8')
-
-        handlerSource = handlerSource.replace(
-            /from\s+['"]\.\.\/\.\.\/src\/helpers\/(.*?)(\.js)?['"]/g,
-            (_match, modulePath) => `from "../../helpers/${modulePath}"`
-        )
-
-        await fs.writeFile(handlerPath, handlerSource, 'utf-8')
     }
 
     private async updateMainPackageJson(outputDir: string, npmDependencies: Map<string, string>): Promise<void> {
@@ -84,7 +74,7 @@ export class HandlerWrapperGenerator implements Generator {
             try {
                 packageJson = await fs.readJson(packageJsonPath)
             } catch (error) {
-                console.warn('Could not read main package.json:', error)
+                this.logger.warn('Could not read main package.json:', error)
             }
         }
 
@@ -96,19 +86,18 @@ export class HandlerWrapperGenerator implements Generator {
         for (const [packageName, version] of npmDependencies) {
             if (!packageJson.dependencies[packageName]) {
                 packageJson.dependencies[packageName] = version
-                console.log(`  Added to package.json: ${packageName}@${version}`)
+                this.logger.info(`  Added to package.json: ${packageName}@${version}`)
                 addedCount++
             } else if (packageJson.dependencies[packageName] === 'latest' && version !== 'latest') {
-                // Update 'latest' to a more specific version
                 packageJson.dependencies[packageName] = version
-                console.log(`  Updated in package.json: ${packageName}@${version} (was 'latest')`)
+                this.logger.info(`  Updated in package.json: ${packageName}@${version} (was 'latest')`)
                 addedCount++
             }
         }
 
         if (addedCount > 0) {
             await fs.writeJson(packageJsonPath, packageJson, { spaces: 2 })
-            console.log(`Updated main package.json with ${addedCount} dependencies`)
+            this.logger.success(`Updated main package.json with ${addedCount} dependencies`)
         }
     }
 

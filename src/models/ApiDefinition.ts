@@ -2,7 +2,6 @@ import {ApiConfig} from "../api/types.js";
 
 export class ApiDefinition {
     constructor(readonly config: ApiConfig) {
-        //validate config
     }
 
     static from(config: ApiConfig): ApiDefinition {

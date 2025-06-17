@@ -6,19 +6,21 @@ import { emulateEvent } from './emulator.js'
 import { buildRouter } from './router.js'
 import { launchDockerPostgres, stopDockerPostgres } from './db/docker.js'
 import { runMigrations } from './db/migrate.js'
+import { createLogger } from '../services/LoggerService.js'
 
+const logger = createLogger('DevServer')
 const PORT = 3000
 
 async function main() {
-    console.log('Starting dev server...')
+    logger.info('Starting dev server...')
     const api = await loadConfig()
     const config = api.config
     const router = buildRouter(config)
 
     if (config.database) {
-        console.log('Launching local Postgres container...')
+        logger.info('Launching local Postgres container...')
         await launchDockerPostgres()
-        console.log('Running database migrations...')
+        logger.info('Running database migrations...')
         await runMigrations(config.database)
     }
 
@@ -43,9 +45,9 @@ async function main() {
             return res.end('Not found')
         }
 
-        console.log(`Matched ${method} ${url.pathname} to ${match.lambdaPath}`)
+        logger.info(`Matched ${method} ${url.pathname} to ${match.lambdaPath}`)
 
-        console.log(match.params)
+        logger.info(`${match.params}`)
 
         const event = await emulateEvent(req, match.params, {
             domainName: "localhost:3000",
@@ -57,7 +59,7 @@ async function main() {
         try {
             mod = await import(lambdaFile)
         } catch (e) {
-            console.error(`Error importing handler for ${lambdaFile}`, e)
+            logger.error(`Error importing handler for ${lambdaFile}`, e)
             res.writeHead(500)
             return res.end('Failed to import lambda')
         }
@@ -66,7 +68,7 @@ async function main() {
         try {
             result = await mod.main(event, {})
         } catch (e) {
-            console.error(`Error running handler for ${lambdaFile}`, e)
+            logger.error(`Error running handler for ${lambdaFile}`, e)
             res.writeHead(500)
             return res.end('Handler error')
         }
@@ -90,17 +92,17 @@ async function main() {
     })
 
     server.listen(PORT, () => {
-        console.log(`Dev server listening at http://localhost:${PORT}`)
+        logger.info(`Dev server listening at http://localhost:${PORT}`)
     })
 
     process.on('SIGINT', async () => {
-        console.log('\nCleaning up...')
+        logger.info('\nCleaning up...')
         await stopDockerPostgres()
         process.exit(0)
     })
 }
 
 main().catch((err) => {
-    console.error('Failed to start dev server:', err)
+    logger.error('Failed to start dev server:', err)
     process.exit(1)
 })

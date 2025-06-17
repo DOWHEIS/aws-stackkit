@@ -40,7 +40,7 @@ api.addRoute({
 api.addAuth(auth)
 
 function auth(event) {
-
+return { user: "drew"}
 }
 
 export default api

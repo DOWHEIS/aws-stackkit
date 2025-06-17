@@ -1,10 +1,12 @@
 import type { ApiConfig, RouteConfig } from './types.js'
 import { ApiDefinition } from '../models/ApiDefinition.js'
 import { ApiBuilder as InfraApiBuilder } from '../core/ApiBuilder.js'
+import {createLogger} from "../services/LoggerService.js";
 
 
 export class ApiBuilder {
     private readonly definition: ApiDefinition
+    private logger = createLogger('ApiBuilder')
 
     constructor(config: ApiConfig) {
         this.definition = ApiDefinition.from(config)
@@ -28,8 +30,8 @@ export class ApiBuilder {
 
         const validation = infra.validate()
         if(!validation.valid) {
-            console.error('API configuration validation failed:')
-            validation.errors.forEach(err => console.error(`- ${err}`))
+            this.logger.error('API configuration validation failed:')
+            validation.errors.forEach(err => this.logger.error(`- ${err}`))
             throw new Error('Invalid API configuration')
         }
         await infra.generate(outputDir)

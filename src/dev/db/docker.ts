@@ -1,5 +1,7 @@
 import { spawn } from 'child_process'
+import { createLogger } from '../../services/LoggerService.js'
 
+const logger = createLogger('Dev:Db:Docker')
 const COMPOSE_FILE = '../src/dev/db/docker-compose.yml'
 
 export async function launchDockerPostgres(): Promise<void> {
@@ -29,10 +31,10 @@ function waitForHealthyContainer(resolve: () => void, reject: (err: Error) => vo
 
     check.on('close', () => {
         if (output.trim() === 'healthy') {
-            console.log('Postgres is healthy and ready.')
+            logger.success('Postgres is healthy and ready.')
             resolve()
         } else {
-            console.log('Waiting for container to become healthy...')
+            logger.info('Waiting for container to become healthy...')
             setTimeout(() => waitForHealthyContainer(resolve, reject), 1000)
         }
     })
@@ -49,7 +51,7 @@ export async function stopDockerPostgres(): Promise<void> {
         })
 
         down.on('exit', () => {
-            console.log('Docker Compose stopped Postgres.')
+            console.info('Docker Compose stopped Postgres.')
             resolve()
         })
     })

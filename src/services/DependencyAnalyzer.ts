@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs-extra'
 import { createRequire } from 'module'
 import ts from 'typescript'
+import {createLogger} from "./LoggerService.js";
 
 export interface LocalDependency {
     originalPath: string
@@ -32,6 +33,8 @@ export class DependencyAnalyzer {
         target: ts.ScriptTarget.ESNext,
         allowJs: true,
     }
+    private logger = createLogger('DependencyAnalyzer')
+
 
     async analyzeDependencies(entryFile: string): Promise<DependencyAnalysisResult> {
         const absEntry = path.resolve(entryFile)
@@ -55,7 +58,7 @@ export class DependencyAnalyzer {
             try {
                 importDetails = await this.extractImportsFromFile(filePath)
             } catch (err) {
-                console.warn(`Failed to parse ${filePath}:`, err)
+                this.logger.warn(`Failed to parse ${filePath}:`, err)
                 continue
             }
 
@@ -68,7 +71,7 @@ export class DependencyAnalyzer {
                             toVisit.push(resolved)
                         }
                     } else {
-                        console.warn(`Could not resolve local import "${spec}" in ${filePath}`)
+                        this.logger.warn(`Could not resolve local import "${spec}" in ${filePath}`)
                     }
                 } else {
                     const packageName = this.extractPackageName(spec)
@@ -222,7 +225,7 @@ export class DependencyAnalyzer {
             }
 
             result.push(dependency)
-            console.log(
+            this.logger.info(
                 `Resolved npm dep: ${name}@${version} (private: ${isPrivate}, ` +
                 `imported: [${dependency.importedItems?.join(', ')}])`
             )
@@ -350,7 +353,7 @@ export class DependencyAnalyzer {
             }
 
         } catch (err) {
-            console.warn(`Could not analyze exports in ${filePath}:`, err)
+            this.logger.warn(`Could not analyze exports in ${filePath}:`, err)
         }
 
         return sources
@@ -373,7 +376,7 @@ export class DependencyAnalyzer {
                 }
             }
         } catch (err) {
-            console.warn(`Could not check exports in ${filePath}:`, err)
+            this.logger.warn(`Could not check exports in ${filePath}:`, err)
         }
 
         return false
@@ -439,7 +442,7 @@ export class DependencyAnalyzer {
                 }
             }
         } catch (err) {
-            console.warn(`Could not trace dependencies in ${filePath}:`, err)
+            this.logger.warn(`Could not trace dependencies in ${filePath}:`, err)
         }
     }
 
@@ -451,7 +454,7 @@ export class DependencyAnalyzer {
             const res = await fetch(url, { method: 'HEAD' })
             return res.status === 404
         } catch (err) {
-            console.warn(`Could not reach public registry for ${pkg}; assuming private.`, err)
+            this.logger.warn(`Could not reach public registry for ${pkg}; assuming private.`, err)
             return true
         }
     }
@@ -476,7 +479,7 @@ export class DependencyAnalyzer {
             const pj = await fs.readJson(pkgJsonPath)
             return { isPrivate: pj.private === true, packagePath: path.dirname(pkgJsonPath) }
         } catch (err) {
-            console.warn(`Could not read package info for ${packageName}:`, err)
+            this.logger.warn(`Could not read package info for ${packageName}:`, err)
             return null
         }
     }
