@@ -18,8 +18,8 @@ A framework for building serverless APIs with automatic CDK infrastructure gener
 The SDK exports only these modules for your application code:
 
 ```ts
-// Database helpers(imports are not right, there is no npm package yet)
-import { insert, selectOne, selectAll, exec } from 'aws-stackkit'
+// Database helpers(imports if you use npm link)
+import { insert, selectOne, selectAll, exec } from 'aws-stackkit/db'
 
 // API configuration and types
 import { createApi, ApiConfig, RouteConfig, DatabaseConfig, ApiEvent, AuthenticatedApiEvent } from 'aws-stackkit'
@@ -53,12 +53,25 @@ npx aws-stackkit rollback
 
 ## Quick Start
 
+### 1. Setup package.json
+
+Make sure the type is set to module, right now this only supports local development, add this script to refresh the SDK from the local source:
+```
+"type": "module",
+// Add this script to refresh the SDK from local source
+"scripts": {
+    "refresh:sdk": "bash -lc 'SDK=\"$HOME/aws-stackkit/src\" && pushd \"$SDK\" >/dev/null && npm run build && TARBALL=$(npm pack --silent) && popd >/dev/null && npm i \"$SDK/$TARBALL\" --save-exact'"
+}
+```
+
 ### 1. Create API Configuration
 
 Create `api.config.ts` in your project root:
 
 ```ts
 import { createApi } from 'aws-stackkit'
+import hello from './src/handlers/hello'
+import getUser from './src/handlers/getUser'
 
 const api = createApi({
   name: 'My API',
@@ -67,22 +80,18 @@ const api = createApi({
     name: 'my_api_db',
     migrationsPath: './migrations'
   },
-  auth: async (event) => {
-    return { email: 'test@example.com' }
-  }
 })
 
 api.addRoute({
   path: '/hello',
   method: 'GET', 
-  lambda: './src/handlers/hello.ts'
+  lambda: hello
 })
 
 api.addRoute({
   path: '/users/{id}',
   method: 'GET',
-  lambda: './src/handlers/getUser.ts',
-  auth: true // Route requires auth
+  lambda: getUser,
 })
 
 export default api
@@ -94,7 +103,7 @@ export default api
 // src/handlers/hello.ts
 import { ApiEvent } from 'aws-stackkit'
 
-export default async function handler(event: ApiEvent) {
+export default async function hello(event: ApiEvent) {
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -107,7 +116,7 @@ export default async function handler(event: ApiEvent) {
 // src/handlers/getUser.ts
 import { selectOne, AuthenticatedApiEvent } from 'aws-stackkit'
 
-export default async function handler(event: AuthenticatedApiEvent) {
+export default async function getUser(event: AuthenticatedApiEvent) {
   const { id } = event.pathParameters
   const user = await selectOne('SELECT * FROM users WHERE id = :id', { id })
   
@@ -140,18 +149,6 @@ The dev server:
 * Launches PostgreSQL via Docker
 * Runs migrations automatically
 * Emulates API Gateway Lambda integration
-
-## Handler Auth Flow
-
-When `auth: true` is set on a route, your `auth` function from `createApi({ auth })` runs first. If it returns something, that value is injected as `event.user`. If it returns nothing (or throws), the request is denied.
-
-```ts
-export default async function handler(event: AuthenticatedApiEvent) {
-  const user = event.user
-  console.log('Authenticated user:', user.email)
-  // ...
-}
-```
 
 ## Database Helpers
 
