@@ -1,4 +1,8 @@
-import {createApi} from "../src/index";
+import {createApi} from "aws-stackkit";
+import createUser from "./functions/createUser";
+import listUsers from "./functions/listUsers";
+import getUser from "./functions/getUser";
+import deleteUser from "./functions/deleteUser";
 
 const api = createApi({
     name: 'User API',
@@ -8,40 +12,40 @@ const api = createApi({
         name: 'user_api_db',
         migrationsPath: './migrations'
     },
+    apiKeys: {enabled: true},
 })
 
 api.addRoute({
     path: '/users',
     method: 'POST',
-    lambda: './functions/createUser.ts',
-    auth: true
+    lambda: createUser,
+    auth: { type: 'apiKey' },
 })
 
 api.addRoute({
     path: '/users',
     method: 'GET',
-    lambda: './functions/listUsers.ts',
-    auth: true
+    lambda: listUsers,
+    auth: { type: 'apiKey' }
 })
 
 api.addRoute({
     path: '/users/{id}',
     method: 'GET',
-    lambda: './functions/getUser.ts',
-    auth: true,
+    lambda: getUser,
 })
 
 api.addRoute({
     path: '/users/{id}',
     method: 'DELETE',
-    lambda: './functions/deleteUser.ts',
+    lambda: deleteUser,
 })
 
-api.addAuth(auth)
-
-function auth(event) {
-return { user: "drew"}
-}
+// api.addAuth(auth)
+//
+// function auth(event) {
+// return { user: "drew"}
+// }
 
 export default api
 

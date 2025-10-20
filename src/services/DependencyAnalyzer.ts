@@ -1,8 +1,8 @@
 import path from 'path'
 import fs from 'fs-extra'
-import { createRequire } from 'module'
+import {createRequire} from 'module'
 import ts from 'typescript'
-import {createLogger} from "./LoggerService.js";
+import {logger} from './Logger.js'
 
 export interface LocalDependency {
     originalPath: string
@@ -20,6 +20,7 @@ export interface NpmDependency {
     exportSourceMap?: Map<string, string>
     pathMapping?: Map<string, string>
     dependencyVersions?: Record<string, string>
+    subpaths?: string[]
 }
 
 export interface DependencyAnalysisResult {
@@ -33,8 +34,6 @@ export class DependencyAnalyzer {
         target: ts.ScriptTarget.ESNext,
         allowJs: true,
     }
-    private logger = createLogger('DependencyAnalyzer')
-
 
     async analyzeDependencies(entryFile: string): Promise<DependencyAnalysisResult> {
         const absEntry = path.resolve(entryFile)
@@ -44,6 +43,7 @@ export class DependencyAnalyzer {
         const localDepsMap = new Map<string, string>()
         const npmPackageMap = new Map<string, {
             importedItems: Set<string>
+            subpaths: Set<string>
             version?: string
             isPrivate?: boolean
             packagePath?: string
@@ -54,15 +54,15 @@ export class DependencyAnalyzer {
             if (visited.has(filePath)) continue
             visited.add(filePath)
 
-            let importDetails: Array<{spec: string, importedItems: string[]}>
+            let importDetails: Array<{ spec: string, importedItems: string[], subpath?: string }>
             try {
                 importDetails = await this.extractImportsFromFile(filePath)
             } catch (err) {
-                this.logger.warn(`Failed to parse ${filePath}:`, err)
+                logger.warn(`Failed to parse ${filePath}:`, err)
                 continue
             }
 
-            for (const {spec, importedItems} of importDetails) {
+            for (const {spec, importedItems, subpath} of importDetails) {
                 if (this.isLocalImport(spec)) {
                     const resolved = this.resolveLocalImport(spec, filePath)
                     if (resolved) {
@@ -71,31 +71,49 @@ export class DependencyAnalyzer {
                             toVisit.push(resolved)
                         }
                     } else {
-                        this.logger.warn(`Could not resolve local import "${spec}" in ${filePath}`)
+                        logger.warn(`Could not resolve local import "${spec}" in ${filePath}`)
                     }
                 } else {
                     const packageName = this.extractPackageName(spec)
                     const existing = npmPackageMap.get(packageName) || {
-                        importedItems: new Set<string>()
+                        importedItems: new Set<string>(),
+                        subpaths: new Set<string>()
                     }
 
                     importedItems.forEach(item => existing.importedItems.add(item))
+
+                    if (subpath) {
+                        existing.subpaths.add(subpath)
+                        logger.info(`Tracked subpath import: ${packageName}${subpath} (items: ${importedItems.join(', ')})`)
+                    }
+
                     npmPackageMap.set(packageName, existing)
                 }
             }
         }
 
         const localDependencies: LocalDependency[] = Array.from(localDepsMap.entries())
-            .map(([resolvedPath, originalPath]) => ({ originalPath, resolvedPath }))
+            .map(([resolvedPath, originalPath]) => ({originalPath, resolvedPath}))
 
         const npmDependencies = await this.resolveNpmDependencies(npmPackageMap, entryFile)
-        return { localDependencies, npmDependencies }
+
+        for (const npmDep of npmDependencies) {
+            logger.info(
+                `Final npm dep: ${npmDep.packageName}@${npmDep.version} (private: ${npmDep.isPrivate}, ` +
+                `subpaths: [${npmDep.subpaths?.join(', ')}], imported: [${npmDep.importedItems?.join(', ')}])`
+            )
+        }
+        return {localDependencies, npmDependencies}
     }
 
-    private async extractImportsFromFile(filePath: string): Promise<Array<{spec: string, importedItems: string[]}>> {
+    private async extractImportsFromFile(filePath: string): Promise<Array<{
+        spec: string,
+        importedItems: string[],
+        subpath?: string
+    }>> {
         const content = await fs.readFile(filePath, 'utf-8')
         const sf = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true)
-        const imports: Array<{spec: string, importedItems: string[]}> = []
+        const imports: Array<{ spec: string, importedItems: string[], subpath?: string }> = []
 
         const visit = (node: ts.Node) => {
             if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -120,25 +138,56 @@ export class DependencyAnalyzer {
                     importedItems.push('*')
                 }
 
-                imports.push({ spec, importedItems })
-            }
-            else if (ts.isCallExpression(node) &&
+                let subpath: string | undefined
+                if (!this.isLocalImport(spec) && spec.includes('/')) {
+                    const packageName = this.extractPackageName(spec)
+                    const remainder = spec.substring(packageName.length)
+                    if (remainder) {
+                        subpath = remainder
+                    }
+                }
+
+                imports.push({spec, importedItems, subpath})
+            } else if (ts.isCallExpression(node) &&
                 ts.isIdentifier(node.expression) &&
                 node.expression.text === 'require' &&
                 node.arguments[0] &&
                 ts.isStringLiteral(node.arguments[0])) {
+                const spec = node.arguments[0].text
+
+                let subpath: string | undefined
+                if (!this.isLocalImport(spec) && spec.includes('/')) {
+                    const packageName = this.extractPackageName(spec)
+                    const remainder = spec.substring(packageName.length)
+                    if (remainder) {
+                        subpath = remainder
+                    }
+                }
+
                 imports.push({
-                    spec: node.arguments[0].text,
-                    importedItems: ['*']
+                    spec,
+                    importedItems: ['*'],
+                    subpath
                 })
-            }
-            else if (ts.isCallExpression(node) &&
+            } else if (ts.isCallExpression(node) &&
                 node.expression.kind === ts.SyntaxKind.ImportKeyword &&
                 node.arguments[0] &&
                 ts.isStringLiteral(node.arguments[0])) {
+                const spec = node.arguments[0].text
+
+                let subpath: string | undefined
+                if (!this.isLocalImport(spec) && spec.includes('/')) {
+                    const packageName = this.extractPackageName(spec)
+                    const remainder = spec.substring(packageName.length)
+                    if (remainder) {
+                        subpath = remainder
+                    }
+                }
+
                 imports.push({
-                    spec: node.arguments[0].text,
-                    importedItems: ['*']
+                    spec,
+                    importedItems: ['*'],
+                    subpath
                 })
             }
 
@@ -157,7 +206,7 @@ export class DependencyAnalyzer {
     }
 
     private resolveLocalImport(spec: string, fromFile: string): string | null {
-        const { resolvedModule } = ts.resolveModuleName(
+        const {resolvedModule} = ts.resolveModuleName(
             spec,
             fromFile,
             DependencyAnalyzer.tsCompilerOptions,
@@ -168,6 +217,7 @@ export class DependencyAnalyzer {
             !resolvedModule.resolvedFileName.includes('node_modules') &&
             !resolvedModule.resolvedFileName.endsWith('.d.ts')
         ) {
+            logger.info(`Resolved local import "${spec}" in ${fromFile} to ${resolvedModule.resolvedFileName}`)
             return resolvedModule.resolvedFileName
         }
         return null
@@ -183,6 +233,7 @@ export class DependencyAnalyzer {
     private async resolveNpmDependencies(
         packageMap: Map<string, {
             importedItems: Set<string>
+            subpaths: Set<string>
             version?: string
             isPrivate?: boolean
             packagePath?: string
@@ -211,13 +262,15 @@ export class DependencyAnalyzer {
                 version,
                 isPrivate,
                 packagePath: pkgInfo?.packagePath,
-                importedItems: Array.from(info.importedItems)
+                importedItems: Array.from(info.importedItems),
+                subpaths: info.subpaths.size > 0 ? Array.from(info.subpaths) : undefined
             }
 
             if (isPrivate && pkgInfo?.packagePath) {
                 const requiredFiles = await this.analyzeRequiredFiles(
                     pkgInfo.packagePath,
-                    info.importedItems
+                    info.importedItems,
+                    info.subpaths
                 )
                 dependency.requiredFiles = requiredFiles.files
                 dependency.dependencies = requiredFiles.dependencies
@@ -225,9 +278,9 @@ export class DependencyAnalyzer {
             }
 
             result.push(dependency)
-            this.logger.info(
+            logger.info(
                 `Resolved npm dep: ${name}@${version} (private: ${isPrivate}, ` +
-                `imported: [${dependency.importedItems?.join(', ')}])`
+                `subpaths: [${dependency.subpaths?.join(', ')}], imported: [${dependency.importedItems?.join(', ')}])`
             )
         }
 
@@ -236,37 +289,160 @@ export class DependencyAnalyzer {
 
     private async analyzeRequiredFiles(
         packagePath: string,
-        importedItems: Set<string>
+        importedItems: Set<string>,
+        subpaths?: Set<string>
     ): Promise<{ files: string[], dependencies: string[], exportSourceMap: Map<string, string> }> {
         const requiredFiles = new Set<string>()
         const dependencies = new Set<string>()
         const visited = new Set<string>()
         const exportSourceMap = new Map<string, string>()
 
+        const pkgJsonPath = path.join(packagePath, 'package.json')
+        const pkgJson = await fs.readJson(pkgJsonPath).catch(() => ({}))
+
         if (importedItems.has('*') || importedItems.has('default')) {
             requiredFiles.add('package.json')
         }
 
-        const pkgJsonPath = path.join(packagePath, 'package.json')
-        const pkgJson = await fs.readJson(pkgJsonPath).catch(() => ({}))
+        let entryPoints: string[] = []
 
-        if (!importedItems.has('*') && !importedItems.has('default')) {
+        if (subpaths && subpaths.size > 0) {
+            logger.info(`Resolving ${subpaths.size} subpath(s) for package at ${packagePath}`)
+
+            if (pkgJson.exports) {
+                logger.info('Package has exports field, checking for subpath mappings')
+
+                for (const subpath of subpaths) {
+                    const exportPath = pkgJson.exports?.[`.${subpath}`] ||
+                        pkgJson.exports?.[subpath]
+
+                    if (exportPath) {
+                        let resolvedPath: string
+                        if (typeof exportPath === 'string') {
+                            resolvedPath = exportPath
+                        } else if (typeof exportPath === 'object') {
+                            resolvedPath = exportPath.default || exportPath.import || exportPath.require || exportPath.module
+
+                            if (!resolvedPath) {
+                                const values = Object.values(exportPath).filter(v => typeof v === 'string')
+                                resolvedPath = values.find(v => !v.endsWith('.d.ts')) || values[0]
+                            }
+                        } else {
+                            logger.warn(`Unexpected export type for subpath ${subpath}`)
+                            continue
+                        }
+
+                        if (resolvedPath.startsWith('./')) {
+                            resolvedPath = resolvedPath.substring(2)
+                        }
+
+                        logger.info(`Package.json points to: ${resolvedPath}`)
+
+                        let exactPath = path.join(packagePath, resolvedPath)
+                        if (await fs.pathExists(exactPath)) {
+                            entryPoints.push(exactPath)
+                            continue
+                        }
+
+                        const basePath = path.join(packagePath, resolvedPath.replace(/\.(js|ts|mjs|cjs|d\.ts)$/, ''))
+                        const extensions = ['.js', '.mjs', '.cjs', '.ts', '/index.js', '/index.ts']
+
+                        let foundFile = false
+                        for (const ext of extensions) {
+                            const candidatePath = basePath + ext
+                            if (await fs.pathExists(candidatePath)) {
+                                entryPoints.push(candidatePath)
+                                foundFile = true
+                                break
+                            }
+                        }
+
+                        if (!foundFile) {
+                            logger.warn(`Could not find file for subpath ${subpath} (package.json says: ${resolvedPath})`)
+                        }
+                    } else {
+                        logger.info(`No exports mapping for subpath "${subpath}", trying direct resolution`)
+                        const directPath = path.join(packagePath, subpath)
+                        const extensions = ['.js', '.mjs', '.cjs', '.ts', '/index.js', '/index.ts']
+                        for (const ext of extensions) {
+                            const candidatePath = directPath + ext
+                            if (await fs.pathExists(candidatePath)) {
+                                entryPoints.push(candidatePath)
+                                break
+                            }
+                        }
+                    }
+                }
+            } else {
+                logger.info('Package has no exports field, trying direct subpath resolution')
+                for (const subpath of subpaths) {
+                    const directPath = path.join(packagePath, subpath)
+                    const extensions = ['.js', '.mjs', '.cjs', '.ts', '/index.js', '/index.ts']
+                    for (const ext of extensions) {
+                        const candidatePath = directPath + ext
+                        if (await fs.pathExists(candidatePath)) {
+                            entryPoints.push(candidatePath)
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        if (entryPoints.length === 0) {
             const mainFile = pkgJson.main || 'index.js'
             const mainPath = path.join(packagePath, mainFile)
 
-            const exportSources = await this.findExportSources(mainPath, packagePath, importedItems)
+            logger.info(`Using package main entry: ${mainFile}`)
 
-            for (const sourcePath of exportSources) {
-                const relativeSource = path.relative(packagePath, sourcePath)
-                for (const item of importedItems) {
-                    const hasExport = await this.fileExportsAny(sourcePath, new Set([item]))
-                    if (hasExport) {
-                        exportSourceMap.set(item, relativeSource)
-                    }
+            const extensions = ['', '.js', '.ts', '.mjs', '.cjs']
+            let mainExists = false
+            for (const ext of extensions) {
+                const candidatePath = mainPath + ext
+                if (await fs.pathExists(candidatePath)) {
+                    entryPoints.push(candidatePath)
+                    mainExists = true
+                    break
                 }
+            }
 
+            if (!mainExists) {
+                logger.warn(`Could not find main entry point for package at ${packagePath}`)
+            }
+        }
+
+        if (entryPoints.length === 0) {
+            logger.warn(`No entry points found for package, falling back to wildcard import`)
+            importedItems.add('*')
+        }
+
+        if (!importedItems.has('*') && !importedItems.has('default') && entryPoints.length > 0) {
+
+            for (const entryPoint of entryPoints) {
+                const exportSources = await this.findExportSources(entryPoint, packagePath, importedItems)
+
+                for (const sourcePath of exportSources) {
+                    const relativeSource = path.relative(packagePath, sourcePath)
+
+                    for (const item of importedItems) {
+                        const hasExport = await this.fileExportsAny(sourcePath, new Set([item]))
+                        if (hasExport) {
+                            exportSourceMap.set(item, relativeSource)
+                        }
+                    }
+                    await this.traceRequiredFiles(
+                        sourcePath,
+                        packagePath,
+                        requiredFiles,
+                        dependencies,
+                        visited,
+                        new Set(['*'])
+                    )
+                }
+            }
+            for (const entryPoint of entryPoints) {
                 await this.traceRequiredFiles(
-                    sourcePath,
+                    entryPoint,
                     packagePath,
                     requiredFiles,
                     dependencies,
@@ -275,19 +451,18 @@ export class DependencyAnalyzer {
                 )
             }
         } else {
-            const mainFile = pkgJson.main || 'index.js'
-            const mainPath = path.join(packagePath, mainFile)
-
-            await this.traceRequiredFiles(
-                mainPath,
-                packagePath,
-                requiredFiles,
-                dependencies,
-                visited,
-                importedItems
-            )
+            for (const entryPoint of entryPoints) {
+                await this.traceRequiredFiles(
+                    entryPoint,
+                    packagePath,
+                    requiredFiles,
+                    dependencies,
+                    visited,
+                    importedItems
+                )
+            }
         }
-
+        logger.info(`Analysis complete: ${requiredFiles.size} files, ${dependencies.size} dependencies`)
         return {
             files: Array.from(requiredFiles),
             dependencies: Array.from(dependencies),
@@ -353,7 +528,7 @@ export class DependencyAnalyzer {
             }
 
         } catch (err) {
-            this.logger.warn(`Could not analyze exports in ${filePath}:`, err)
+            logger.warn(`Could not analyze exports in ${filePath}:`, err)
         }
 
         return sources
@@ -376,7 +551,7 @@ export class DependencyAnalyzer {
                 }
             }
         } catch (err) {
-            this.logger.warn(`Could not check exports in ${filePath}:`, err)
+            logger.warn(`Could not check exports in ${filePath}:`, err)
         }
 
         return false
@@ -442,7 +617,7 @@ export class DependencyAnalyzer {
                 }
             }
         } catch (err) {
-            this.logger.warn(`Could not trace dependencies in ${filePath}:`, err)
+            logger.warn(`Could not trace dependencies in ${filePath}:`, err)
         }
     }
 
@@ -451,10 +626,10 @@ export class DependencyAnalyzer {
         const url = `https://registry.npmjs.org/${encoded}`
 
         try {
-            const res = await fetch(url, { method: 'HEAD' })
+            const res = await fetch(url, {method: 'HEAD'})
             return res.status === 404
         } catch (err) {
-            this.logger.warn(`Could not reach public registry for ${pkg}; assuming private.`, err)
+            logger.warn(`Could not reach public registry for ${pkg}; assuming private.`, err)
             return true
         }
     }
@@ -477,9 +652,9 @@ export class DependencyAnalyzer {
             }
 
             const pj = await fs.readJson(pkgJsonPath)
-            return { isPrivate: pj.private === true, packagePath: path.dirname(pkgJsonPath) }
+            return {isPrivate: pj.private === true, packagePath: path.dirname(pkgJsonPath)}
         } catch (err) {
-            this.logger.warn(`Could not read package info for ${packageName}:`, err)
+            logger.warn(`Could not read package info for ${packageName}:`, err)
             return null
         }
     }

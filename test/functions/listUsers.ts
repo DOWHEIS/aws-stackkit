@@ -7,7 +7,7 @@ type User = {
     created_at: string
 }
 
-export default async function handler(event: { ssoUser: any }) {
+export default async function listUsers(event: { ssoUser: any }) {
     try {
         console.log(event.ssoUser)
         const users = await selectAll<User>(

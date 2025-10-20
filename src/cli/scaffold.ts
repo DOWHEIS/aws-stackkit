@@ -4,40 +4,45 @@ import { ApiBuilder } from '../core/ApiBuilder.js'
 import { loadConfig } from '../internal/loadConfig.js'
 import { runCommand } from '../internal/runCommand.js'
 import { formatCdk } from '../internal/format.js'
-import { createLogger } from '../services/LoggerService.js'
+import { logger } from '../services/Logger.js'
+import {PathResolver} from "../internal/PathResolver.js";
 
-const logger = createLogger('Scaffold')
+const paths = new PathResolver(import.meta.url)
 
-export async function scaffold(outputDir: string = 'cdk-refactors'): Promise<void> {
+export async function scaffold(outputDir: string = 'cdk'): Promise<void> {
     try {
-        logger.info('Loading api.config.ts...')
-        const { config, apiDefinition } = await loadConfig()
-        logger.success(`Loaded config for "${config.name}"`)
+        logger.section('Loading api.config.ts...')
+        const { apiDefinition } = await loadConfig();
+        logger.success(`Loaded config for "${apiDefinition.name}"`);
 
-        const builder = ApiBuilder.from(apiDefinition)
-        const validation = builder.validate()
-        if (!validation.valid) {
-            logger.error('Configuration validation failed:')
-            validation.errors.forEach(error => logger.error(`  • ${error}`))
-            process.exit(1)
-        }
+        await fs.ensureDir(outputDir);
 
-        await fs.ensureDir(outputDir)
-        await builder.generate(outputDir)
+        const builder = new ApiBuilder(apiDefinition);
+        await builder.generate(outputDir);
 
-        const cdkDir = path.resolve(process.cwd(), outputDir)
-        logger.info(`Installing npm dependencies in ${cdkDir}...`)
-        await runCommand('npm', ['install'], cdkDir)
-        logger.success('Dependencies installed successfully')
+        const cdkDir = path.resolve(process.cwd(), outputDir);
+        logger.info(`Installing npm dependencies in ${cdkDir}...`);
+        await logger.duration('npm install', async () => {
+            await runCommand('npm', ['install'], cdkDir);
+        });
+        logger.success('Dependencies installed successfully.');
 
-        logger.info('Formatting generated code with Prettier...')
-        await formatCdk()
-        logger.success('Code formatted')
+        logger.info('Formatting generated code with Prettier...');
+        await logger.duration('format', async () => {
+            const cdkDevDir = paths.user('.cdk_dev')
+
+            const isDev = outputDir === cdkDevDir;
+            await formatCdk(isDev, import.meta.url);
+        });
+        logger.success('Code formatted.');
+
     } catch (error) {
-        logger.error('Scaffolding failed:', error)
+        logger.error('Scaffolding failed:', error);
+
         if (error instanceof Error) {
-            logger.error('Stack trace:', error.stack)
+            logger.error('Stack trace:', error.stack);
         }
-        process.exit(1)
+
+        process.exit(1);
     }
 }

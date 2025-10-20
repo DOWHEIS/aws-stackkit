@@ -1,0 +1,5 @@
+environment: {
+{{#envVars}}
+    {{key}}: {{#isReference}}{{value}}{{/isReference}}{{^isReference}}'{{value}}'{{/isReference}},
+{{/envVars}}
+}

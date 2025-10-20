@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs-extra'
 import { DependencyAnalyzer, LocalDependency, NpmDependency } from './DependencyAnalyzer.js'
-import {createLogger} from "./LoggerService.js";
+import {logger} from "./Logger.js";
 
 export interface BundleResult {
     copiedFiles: string[]
@@ -13,17 +13,20 @@ export interface BundleResult {
 export class DependencyBundler {
     private analyzer = new DependencyAnalyzer()
     private static sharedFiles = new Map<string, string>()
-    private logger = createLogger('DependencyBundler')
+    private isDev = process.env.SDK_DEV_SERVER === '1'
 
+    private getSharedPathPrefix(): string {
+        return this.isDev ? './shared' : '../shared'
+    }
 
     async bundleHandler(
         handlerPath: string,
         outputDir: string,
-        wrappedDir: string
+        wrappedDir: string,
     ): Promise<BundleResult> {
         const analysis = await this.analyzer.analyzeDependencies(handlerPath)
 
-        this.logger.info(`Found ${analysis.localDependencies.length} local dependencies and ${analysis.npmDependencies.length} npm dependencies for ${path.basename(handlerPath)}`)
+        logger.info(`Found ${analysis.localDependencies.length} local dependencies and ${analysis.npmDependencies.length} npm dependencies for ${path.basename(handlerPath)}`)
 
         const entryFile = path.join(outputDir, 'handler.ts')
 
@@ -78,7 +81,7 @@ export class DependencyBundler {
         if (existingSharedName) {
             const existingPath = path.join(sharedDir, existingSharedName)
             await fs.copy(dep.resolvedPath, existingPath, { overwrite: true })
-            this.logger.info(`Updated existing shared file: ${existingSharedName}`)
+            logger.info(`Updated existing shared file: ${existingSharedName}`)
             return
         }
 
@@ -104,16 +107,17 @@ export class DependencyBundler {
                 } while (await fs.pathExists(finalPath) ||
                 Array.from(DependencyBundler.sharedFiles.values()).includes(finalFileName))
 
-                this.logger.info(`Name conflict resolved: ${fileName} -> ${finalFileName}`)
+                logger.info(`Name conflict resolved: ${fileName} -> ${finalFileName}`)
             }
         }
 
         await fs.copy(dep.resolvedPath, finalPath)
         DependencyBundler.sharedFiles.set(dep.resolvedPath, finalFileName)
-        this.logger.info(`Copied to shared: ${path.basename(dep.resolvedPath)} -> shared/${finalFileName}`)
+        console.log(`Copied to shared: ${path.basename(dep.resolvedPath)} -> shared/${finalFileName}`)
     }
 
     private async copyPrivatePackage(pkg: NpmDependency, sharedDir: string): Promise<void> {
+        logger.info(`\nProcessing private package: ${pkg.packageName}, path: ${pkg.packagePath}, subpaths: [${pkg.subpaths?.join(', ')}], importedItems: ${pkg.importedItems?.join(', ')}, requiredFiles: ${pkg.requiredFiles?.join(', ')}`)
         if (!pkg.packagePath) return;
 
         const pkgRoot = pkg.packagePath;
@@ -121,7 +125,7 @@ export class DependencyBundler {
         await fs.ensureDir(destDir);
 
         if (pkg.requiredFiles && pkg.requiredFiles.length > 0) {
-            this.logger.info(`Selectively copying ${pkg.requiredFiles.length} files from ${pkg.packageName}`)
+            logger.info(`Selectively copying ${pkg.requiredFiles.length} files from ${pkg.packageName}`)
 
             const pathMapping = new Map<string, string>()
             const usedNames = new Set<string>()
@@ -152,7 +156,7 @@ export class DependencyBundler {
                             }
 
                             destFile = candidateName
-                            this.logger.info(`  Name collision resolved: ${basename} -> ${destFile}`)
+                            logger.info(`  Name collision resolved: ${basename} -> ${destFile}`)
                         } else {
                             destFile = basename
                         }
@@ -164,14 +168,14 @@ export class DependencyBundler {
 
                     const dest = path.join(destDir, destFile)
                     await fs.copy(src, dest)
-                    this.logger.info(`  Copied: ${file} -> ${destFile}`)
+                    logger.info(`  Copied: ${file} -> ${destFile}`)
                 }
             }
 
             pkg.pathMapping = pathMapping
 
             if (pkg.dependencies && pkg.dependencies.length > 0) {
-                this.logger.info(`  External dependencies found: ${pkg.dependencies.join(', ')}`)
+                logger.info(`  External dependencies found: ${pkg.dependencies.join(', ')}`)
             }
 
             if (!pathMapping.has('package.json') && pkg.dependencies && pkg.dependencies.length > 0) {
@@ -189,12 +193,12 @@ export class DependencyBundler {
                             }
                         }
                     } catch (err) {
-                        this.logger.warn(`Could not read package.json for dependency versions:`, err)
+                        logger.warn(`Could not read package.json for dependency versions:`, err)
                     }
                 }
             }
         } else {
-            this.logger.info(`Copying entire private package ${pkg.packageName} (no selective info available)`)
+            logger.info(`Copying entire private package ${pkg.packageName} (no selective info available)`)
 
             await fs.copy(pkgRoot, destDir, {
                 filter: (src) => {
@@ -207,7 +211,7 @@ export class DependencyBundler {
         }
 
         DependencyBundler.sharedFiles.set(pkg.packageName, pkg.packageName);
-        this.logger.info(`Copied private package to shared/${pkg.packageName}`);
+        logger.info(`Copied private package to shared/${pkg.packageName}`);
     }
 
     private async updateImports(
@@ -216,17 +220,20 @@ export class DependencyBundler {
         npmDeps: NpmDependency[]
     ): Promise<void> {
         let content = await fs.readFile(filePath, 'utf-8')
-        this.logger.info('\nUpdating imports in', path.basename(filePath))
+        logger.info('\nUpdating imports in', path.basename(filePath))
 
+        const sharedPathPrefix = this.getSharedPathPrefix()
+
+        // Update local dependencies
         for (const dep of localDeps) {
             const sharedName = DependencyBundler.sharedFiles.get(dep.resolvedPath)
             if (!sharedName) {
-                this.logger.warn(`No shared file mapping for ${dep.resolvedPath}`)
+                logger.warn(`No shared file mapping for ${dep.resolvedPath}`)
                 continue
             }
 
             const baseName = sharedName.replace(/\.(ts|js)$/, '')
-            const newImport = `../shared/${baseName}`
+            const newImport = `${sharedPathPrefix}/${baseName}`
 
             const importPattern = dep.originalPath
             const escapedPattern = importPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -241,14 +248,56 @@ export class DependencyBundler {
                 const before = content
                 content = content.replace(pattern, `$1${newImport}$2`)
                 if (content !== before) {
-                    this.logger.info(`Updated import: "${dep.originalPath}" -> "${newImport}"`)
+                    logger.info(`Updated import: "${dep.originalPath}" -> "${newImport}"`)
                 }
             }
         }
 
+        // NEW: Update npm dependencies with subpath support
         for (const pkg of npmDeps) {
             if (!pkg.isPrivate || !DependencyBundler.sharedFiles.has(pkg.packageName)) continue
 
+            // Handle packages with subpaths
+            if (pkg.subpaths && pkg.subpaths.length > 0) {
+                logger.info(`Processing subpath imports for ${pkg.packageName}: [${pkg.subpaths.join(', ')}]`)
+
+                for (const subpath of pkg.subpaths) {
+                    const fullImport = `${pkg.packageName}${subpath}`
+                    const escapedPackage = pkg.packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                    const escapedSubpath = subpath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+                    // Pattern to match: from "aws-stackkit/db"
+                    const subpathPattern = new RegExp(
+                        `(from\\s+["'])${escapedPackage}${escapedSubpath}(["'])`,
+                        'g'
+                    )
+
+                    // NEW: Rewrite to shared location with subpath preserved
+                    const newImportPath = `${sharedPathPrefix}/${pkg.packageName}${subpath}`
+
+                    const before = content
+                    content = content.replace(subpathPattern, `$1${newImportPath}$2`)
+
+                    if (content !== before) {
+                        logger.info(`✓ Updated subpath import: "${fullImport}" -> "${newImportPath}"`)
+                    }
+
+                    // Also handle require() and dynamic import()
+                    const requirePattern = new RegExp(
+                        `(require\\s*\\(\\s*["'])${escapedPackage}${escapedSubpath}(["']\\s*\\))`,
+                        'g'
+                    )
+                    content = content.replace(requirePattern, `$1${newImportPath}$2`)
+
+                    const dynamicImportPattern = new RegExp(
+                        `(import\\s*\\(\\s*["'])${escapedPackage}${escapedSubpath}(["']\\s*\\))`,
+                        'g'
+                    )
+                    content = content.replace(dynamicImportPattern, `$1${newImportPath}$2`)
+                }
+            }
+
+            // Handle selective imports with export source maps (existing logic)
             if (pkg.importedItems && pkg.exportSourceMap && !pkg.importedItems.includes('*')) {
                 const importRegex = new RegExp(
                     `(import\\s+{([^}]+)}\\s+from\\s+["'])${pkg.packageName}(["'])`,
@@ -271,33 +320,31 @@ export class DependencyBundler {
 
                     if (sourceFiles.size === 1) {
                         const sourceFile = Array.from(sourceFiles)[0]
-                        const newImportPath = `../shared/${pkg.packageName}/${sourceFile}`
-                        this.logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportPath}"`)
+                        const newImportPath = `${sharedPathPrefix}/${pkg.packageName}/${sourceFile}`
+                        logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportPath}"`)
                         return `${prefix}${newImportPath}${suffix}`
                     } else {
-                        const newImportBase = `../shared/${pkg.packageName}`
-                        this.logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportBase}"`)
+                        const newImportBase = `${sharedPathPrefix}/${pkg.packageName}`
+                        logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportBase}"`)
                         return `${prefix}${newImportBase}${suffix}`
                     }
                 })
             } else {
-                const newImportBase = `../shared/${pkg.packageName}`
+                // Handle base package imports (no subpath, no selective mapping)
+                const newImportBase = `${sharedPathPrefix}/${pkg.packageName}`
 
                 const patterns = [
                     new RegExp(`(from\\s+["'])${pkg.packageName}(["'])`, 'g'),
-                    new RegExp(`(from\\s+["'])${pkg.packageName}(/[^"']+)(["'])`, 'g'),
                     new RegExp(`(require\\s*\\(\\s*["'])${pkg.packageName}(["']\\s*\\))`, 'g'),
-                    new RegExp(`(require\\s*\\(\\s*["'])${pkg.packageName}(/[^"']+)(["']\\s*\\))`, 'g')
                 ]
 
                 content = content.replace(patterns[0], `$1${newImportBase}$2`)
-                content = content.replace(patterns[1], `$1${newImportBase}$2$3`)
-                content = content.replace(patterns[2], `$1${newImportBase}$2`)
-                content = content.replace(patterns[3], `$1${newImportBase}$2$3`)
-                this.logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportBase}"`)
+                content = content.replace(patterns[1], `$1${newImportBase}$2`)
+                logger.info(`Updated private package import: "${pkg.packageName}" -> "${newImportBase}"`)
             }
         }
 
         await fs.writeFile(filePath, content, 'utf-8')
+        logger.info('Import updates complete\n')
     }
 }

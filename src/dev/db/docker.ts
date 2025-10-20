@@ -1,20 +1,23 @@
 import { spawn } from 'child_process'
-import { createLogger } from '../../services/LoggerService.js'
+import { PathResolver } from "../../internal/PathResolver.js"
+import { logger } from '../../services/Logger.js'
 
-const logger = createLogger('Dev:Db:Docker')
-const COMPOSE_FILE = '../src/dev/db/docker-compose.yml'
+const paths = new PathResolver(import.meta.url)
+
+const COMPOSE_FILE = paths.relative('./docker-compose.yml', import.meta.url)
 
 export async function launchDockerPostgres(): Promise<void> {
     return new Promise((resolve, reject) => {
-        const up = spawn('docker-compose', ['-f', COMPOSE_FILE, 'up', '-d'], {
+        const up = spawn('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d'], {
             stdio: 'inherit',
         })
 
         up.on('exit', (code) => {
             if (code === 0) {
-                console.log('Docker Compose launched Postgres.')
+                logger.success('Docker Compose launched Postgres.')
                 waitForHealthyContainer(resolve, reject)
             } else {
+                logger.error('Failed to launch docker-compose')
                 reject(new Error('Failed to launch docker-compose'))
             }
         })
@@ -40,18 +43,19 @@ function waitForHealthyContainer(resolve: () => void, reject: (err: Error) => vo
     })
 
     check.stderr?.on('data', (data) => {
+        logger.error('Error checking container health:', data.toString())
         reject(new Error('Error checking container health: ' + data.toString()))
     })
 }
 
 export async function stopDockerPostgres(): Promise<void> {
     return new Promise((resolve) => {
-        const down = spawn('docker-compose', ['-f', COMPOSE_FILE, 'down'], {
+        const down = spawn('docker', ['compose', '-f', COMPOSE_FILE, 'down'], {
             stdio: 'inherit',
         })
 
         down.on('exit', () => {
-            console.info('Docker Compose stopped Postgres.')
+            logger.info('Docker Compose stopped Postgres.')
             resolve()
         })
     })

@@ -10,3 +10,5 @@ dist/
 .DS_Store
 
 .idea/
+
+aws-stackkit-*.tgz

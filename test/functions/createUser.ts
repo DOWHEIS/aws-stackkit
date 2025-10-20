@@ -7,7 +7,7 @@ type CreateUserInput = {
     email: string
 }
 
-export default async function handler(event: APIGatewayProxyEvent) {
+export default async function createUser(event: APIGatewayProxyEvent) {
     let body: Partial<CreateUserInput> = {}
 
     try {

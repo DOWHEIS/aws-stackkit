@@ -18,17 +18,18 @@ async function getPool() {
 }
 
 function mapNamedParams(sql: string, params: Record<string, any>) {
-    const keys = Object.keys(params)
     let idx = 1
     const keyMap: Record<string, number> = {}
     const values: any[] = []
-    const sqlOut = sql.replace(/:([a-zA-Z0-9_]+)/g, (_m, k) => {
+
+    const sqlOut = sql.replace(/(?<!:):([a-zA-Z0-9_]+)/g, (_m, k) => {
         if (!(k in keyMap)) {
             keyMap[k] = idx++
             values.push(params[k])
         }
         return `$${keyMap[k]}`
     })
+
     return { sql: sqlOut, values }
 }
 

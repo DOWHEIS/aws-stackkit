@@ -3,50 +3,68 @@ import fs from 'fs-extra'
 import { readdir, readFile } from 'fs/promises'
 import { RDSDataClient, ExecuteStatementCommand } from '@aws-sdk/client-rds-data'
 import { loadConfig } from '../internal/loadConfig.js'
-import {
-    COMMON_CLUSTER_ARN,
-    COMMON_SECRET_ARN
-} from '../helpers/globalConfig.js'
-import { createLogger } from '../services/LoggerService.js'
+import { PathResolver } from '../internal/PathResolver.js'
 
-const logger = createLogger('Migrate')
+import { logger } from '../services/Logger.js'
+import {checkCoreInfra} from "../internal/checkCoreInfra.js";
+
+const DEFAULT_MIGRATION_PATHS = [
+    './migrations',
+    './src/migrations',
+    './database/migrations'
+]
 
 export async function migrate() {
+    let infra: Awaited<ReturnType<typeof checkCoreInfra>>
     try {
-        const { config } = await loadConfig()
+        infra = await checkCoreInfra()
+        const paths = new PathResolver(import.meta.url)
+        const { apiDefinition } = await loadConfig()
 
-        if (!config.database) {
-            logger.info('No database configured - skipping migrations')
+        if (!apiDefinition.database) {
+            logger.warn('No database configured - skipping migrations')
             return
         }
 
-        logger.info(`Running migrations for database: ${config.database.name}`)
+        logger.section(`Running migrations for database: ${apiDefinition.database.name}`)
 
         const dataApi = new RDSDataClient({})
 
         async function exec(sql: string) {
             await dataApi.send(new ExecuteStatementCommand({
-                resourceArn: COMMON_CLUSTER_ARN,
-                secretArn: COMMON_SECRET_ARN,
-                database: config.database!.name,
+                resourceArn: infra.dbClusterArn,
+                secretArn: infra.dbSecretArn,
+                database: apiDefinition.database!.name,
                 sql
             }))
         }
 
-        logger.info('Ensuring migrations table exists...')
-        await exec(`
-            CREATE TABLE IF NOT EXISTS _migrations (
-              id TEXT PRIMARY KEY,
-              run_at TIMESTAMP DEFAULT now()
-            );
-        `)
+        logger.substep('Ensuring _migrations table exists...')
+        await exec(`CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY,run_at TIMESTAMP DEFAULT now());`)
 
-        const migrationsPath = config.database.migrationsPath || './migrations'
-        const migrationsDir = path.resolve(migrationsPath)
+        let migrationsDir: string
+
+        if (apiDefinition.database.migrationsPath) {
+            migrationsDir = paths.resolve(apiDefinition.database.migrationsPath)
+        } else {
+            const foundPath = DEFAULT_MIGRATION_PATHS.find(p =>
+                fs.existsSync(paths.user(p))
+            )
+
+            if (!foundPath) {
+                logger.warn('No migrations directory found in default locations:')
+                DEFAULT_MIGRATION_PATHS.forEach(p => logger.substep(p))
+                logger.info('Create migrations using: npx api-sdk create:migration <n>')
+                return
+            }
+
+            migrationsDir = paths.user(foundPath)
+            logger.info(`Auto-discovered migrations in: ${paths.toRelative(migrationsDir)}`)
+        }
 
         if (!await fs.pathExists(migrationsDir)) {
-            logger.error(`No migrations directory found at: ${migrationsDir}`)
-            logger.error('Create migrations directory and add .sql files')
+            logger.warn(`Migrations directory not found: ${paths.toRelative(migrationsDir)}`)
+            logger.info('Create migrations using: npx api-sdk create:migration <n>')
             return
         }
 
@@ -55,31 +73,36 @@ export async function migrate() {
             .sort()
 
         if (files.length === 0) {
-            logger.error('No migration files found')
+            logger.info('No migration files found')
+            logger.info('Create migrations using: npx api-sdk create:migration <n>')
             return
         }
 
-        logger.info(`Found ${files.length} migration files`)
+        logger.info(`Found ${files.length} migration file(s)`)
 
         let ranCount = 0
         for (const file of files) {
             const id = path.basename(file)
 
             const { records } = await dataApi.send(new ExecuteStatementCommand({
-                resourceArn: COMMON_CLUSTER_ARN,
-                secretArn: COMMON_SECRET_ARN,
-                database: config.database.name,
+                resourceArn: infra.dbClusterArn,
+                secretArn: infra.dbSecretArn,
+                database: apiDefinition.database.name,
                 sql: `SELECT 1 FROM _migrations WHERE id = :id`,
                 parameters: [{ name: 'id', value: { stringValue: id } }]
             }))
 
             if (records && records.length) {
-                logger.info(`Skipping ${id} (already run)`)
+                logger.substep(`Skipping ${id} (already run)`)
                 continue
             }
 
-            logger.info(`Running ${id}...`)
-            const sql = await readFile(path.join(migrationsDir, file), 'utf-8')
+            logger.substep(`Running ${id}...`)
+            const fullContent = await readFile(path.join(migrationsDir, file), 'utf-8')
+
+            //split on @@rollback to only run the "up" part
+            const [upContent] = fullContent.split('@@rollback')
+            const sql = upContent.trim()
 
             try {
                 await exec(sql)

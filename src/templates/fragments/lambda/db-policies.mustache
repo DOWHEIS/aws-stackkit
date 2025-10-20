@@ -1,0 +1,8 @@
+lambda{{index}}.addToRolePolicy(new PolicyStatement({
+actions: ['rds-data:ExecuteStatement'],
+resources: [cluster.clusterArn],
+}))
+lambda{{index}}.addToRolePolicy(new PolicyStatement({
+actions: ['secretsmanager:GetSecretValue'],
+resources: [secret.secretArn],
+}))

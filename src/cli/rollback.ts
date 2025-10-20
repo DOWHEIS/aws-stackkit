@@ -4,9 +4,7 @@ import { readLastDeployedConfig } from '../internal/sdkmeta.js'
 import { ApiDefinition } from '../models/ApiDefinition.js'
 import { ApiBuilder } from '../core/ApiBuilder.js'
 import { formatCdk } from '../internal/format.js'
-import { createLogger } from '../services/LoggerService.js'
-
-const logger = createLogger('Rollback')
+import { logger } from '../services/Logger.js'
 
 export async function rollback() {
     try {
@@ -14,11 +12,11 @@ export async function rollback() {
 
         if (!lastConfig) {
             logger.error('No last-deployed config found.')
-            logger.error('Deploy at least once before using rollback')
+            logger.info('Deploy at least once before using rollback')
             process.exit(1)
         }
 
-        logger.info('Rebuilding CDK files from last-deployed config...')
+        logger.section('Rebuilding CDK files from last-deployed config...')
         logger.info(`Rolling back to: ${lastConfig.name}`)
 
         const apiDefinition = ApiDefinition.from(lastConfig)
@@ -28,13 +26,13 @@ export async function rollback() {
         await fs.remove(cdkDir)
         await fs.ensureDir(cdkDir)
 
-        const builder = ApiBuilder.from(apiDefinition)
+        const builder = new ApiBuilder(apiDefinition)
         await builder.generate(cdkDir)
 
         logger.info('Formatting generated code...')
-        await formatCdk()
+        await formatCdk(false, import.meta.url)
 
-        logger.success('Rollback complete!')
+        logger.banner('Rollback complete!')
         logger.success('CDK files restored from last-deployed config')
         logger.info('Run "npm install" in the cdk directory if needed')
 

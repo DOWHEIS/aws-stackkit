@@ -7,120 +7,111 @@ import { PackageJsonGenerator } from '../generators/PackageJsonGenerator.js'
 import { TsconfigGenerator } from '../generators/TsconfigGenerator.js'
 import { CdkJsonGenerator } from '../generators/CdkJsonGenerator.js'
 import { HandlerWrapperGenerator } from '../generators/HandlerWrapperGenerator.js'
-import { AuthGenerator } from '../generators/AuthGenerator.js'
-import {HelpersGenerator} from "../generators/HelpersGenerator.js";
-import {createLogger} from "../services/LoggerService.js";
+// import { AuthGenerator } from '../generators/AuthGenerator.js'
+import { HelpersGenerator } from "../generators/HelpersGenerator.js"
+import { logger } from '../services/Logger.js'
 
 export class ApiBuilder {
-    private readonly templateService: TemplateService
-    private readonly generators: Generator[]
-    private logger = createLogger('Core:ApiBuilder')
+    private readonly templateService: TemplateService;
 
-    constructor(private readonly api: ApiDefinition) {
-        this.templateService = new TemplateService()
-        this.generators = this.createGenerators()
+    constructor(private readonly apiDefinition: ApiDefinition) {
+        this.templateService = new TemplateService();
     }
 
     async generate(outputDir: string): Promise<void> {
-        this.logger.info(`Generating infrastructure for ${this.api.name}...`)
-        this.logger.info(`${this.api.routes.length} routes, ${this.api.hasAuth() ? 'with' : 'without'} auth, ${this.api.hasDatabase() ? 'with' : 'without'} database`)
+        logger.section(`Generating infrastructure for ${this.apiDefinition.name}`);
+        logger.info(this.apiDefinition.getSummary());
 
-        let generatedCount = 0
+        const generators = this.createGenerators();
+        let generatedCount = 0;
 
-        for (const generator of this.generators) {
+        for (const generator of generators) {
             try {
-                await generator.generate(this.api, outputDir)
-                generatedCount++
+                await logger.duration(`Running ${generator.constructor.name}`, async () => {
+                    await generator.generate(this.apiDefinition, outputDir);
+                });
+                generatedCount++;
             } catch (error) {
-                this.logger.error(`Failed to run ${generator.constructor.name}:`, error)
-                throw error
+                logger.error(`Failed to run ${generator.constructor.name}:`, error);
+                throw error;
             }
         }
 
-        this.logger.success(`Generated complete infrastructure in ${outputDir}`)
-        this.logger.success(`${generatedCount} generators completed successfully`)
-        this.printNextSteps(outputDir)
+        logger.success(`Generated complete infrastructure in ${outputDir}`);
+        logger.info(`${generatedCount} generators completed successfully`);
+        this.printNextSteps(outputDir);
+    }
+
+    async generateDevOnly(outputDir: string): Promise<void> {
+        logger.section(`Generating dev server updates for ${this.apiDefinition.name}`);
+
+        const generators: Generator[] = [
+            new PackageJsonGenerator(this.templateService),
+            new HandlerWrapperGenerator()
+        ];
+
+        // if (this.apiDefinition.hasSSOAuth()) {
+        //     generators.push(new AuthGenerator());
+        // }
+
+        let generatedCount = 0;
+        for (const generator of generators) {
+            try {
+                await logger.duration(`Running ${generator.constructor.name}`, async () => {
+                    await generator.generate(this.apiDefinition, outputDir);
+                });
+                generatedCount++;
+            } catch (error) {
+                logger.error(`Failed to run ${generator.constructor.name}:`, error);
+                throw error;
+            }
+        }
+
+        logger.success(`Generated dev server updates in ${outputDir}`);
     }
 
     private createGenerators(): Generator[] {
-        const generators: Generator[] = []
+        logger.info('Planning generation...');
 
-        this.logger.info('Planning generation...')
-
-        generators.push(
+        const generators: Generator[] = [
             new CdkStackGenerator(this.templateService),
             new CdkAppGenerator(this.templateService),
             new PackageJsonGenerator(this.templateService),
             new TsconfigGenerator(this.templateService),
             new CdkJsonGenerator(this.templateService),
-            new HelpersGenerator()
-        )
-        this.logger.info('  Core CDK files')
+            new HelpersGenerator(),
+            new HandlerWrapperGenerator()
+        ];
+        logger.substep('Core CDK files and handler wrappers');
 
-        generators.push(new HandlerWrapperGenerator())
-        this.logger.info('  Handler wrappers')
+        // if (this.apiDefinition.hasSSOAuth()) {
+        //     generators.push(new AuthGenerator());
+        //     logger.substep('Auth components (SSO enabled)');
+        // }
 
-        if (this.api.hasAuth()) {
-            generators.push(new AuthGenerator())
-            this.logger.info('  Auth components (SSO enabled)')
-        }
-
-        this.logger.info(`${generators.length} generators ready`)
-        return generators
+        logger.info(`${generators.length} generators ready`);
+        return generators;
     }
 
     private printNextSteps(outputDir: string): void {
-        this.logger.success('\nScaffolding complete!')
-        this.logger.info('\nNext steps:')
-        this.logger.info(`  check ${outputDir} for generated files`)
-        this.logger.info(`  for deployment, run: cdk deploy in ${outputDir} or use the deploy command in the CLI`)
+        logger.banner('Scaffolding complete!');
 
+        // if (this.apiDefinition.hasSSOAuth()) {
+        //     logger.section('SSO Auth is enabled:');
+        //     logger.info('  - SSO login will be available at /auth/prelogin');
+        //     logger.info('  - Auth approval at /auth/approve');
+        // }
 
-        if (this.api.hasAuth()) {
-            this.logger.info('\nAuth is enabled:')
+        if (this.apiDefinition.hasApiKeyAuth()) {
+            logger.section('API Key authentication is enabled:');
+            logger.info('  - API keys can be managed in the AWS console');
+            logger.info('  - Use the generated API key in your requests');
         }
 
-        if (this.api.hasDatabase()) {
-            this.logger.info('\nDatabase is configured:')
-            this.logger.info(`  - Database: ${this.api.database!.name}`)
-            this.logger.info('  - Connection details will be available via environment variables')
-        }
-    }
-
-    static from(api: ApiDefinition): ApiBuilder {
-        return new ApiBuilder(api)
-    }
-
-    validate(): { valid: boolean; errors: string[] } {
-        const errors: string[] = []
-
-        if (!this.api.name?.trim()) {
-            errors.push('API name is required')
-        }
-
-        if (!this.api.routes || this.api.routes.length === 0) {
-            errors.push('At least one route is required')
-        }
-
-        for (const route of this.api.routes || []) {
-            if (!route.path) {
-                errors.push(`Route missing path: ${JSON.stringify(route)}`)
-            }
-            if (!route.method) {
-                errors.push(`Route missing method: ${route.path}`)
-            }
-            if (!route.lambda) {
-                errors.push(`Route missing lambda: ${route.path}`)
-            }
-        }
-
-        if (this.api.hasDatabase() && !this.api.database?.name) {
-            errors.push('Database name is required when database is enabled')
-        }
-
-        return {
-            valid: errors.length === 0,
-            errors
+        if (this.apiDefinition.hasDatabase()) {
+            logger.section('Database is configured:');
+            logger.info(`  - Database: ${this.apiDefinition.database!.name}`);
+            logger.info('  - Connection details will be available via environment variables');
         }
     }
 }

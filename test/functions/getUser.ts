@@ -1,5 +1,5 @@
 import { APIGatewayProxyEvent } from 'aws-lambda'
-import { selectOne } from '../../src/api/db.js'
+// import { selectOne } from 'aws-stackkit'
 
 type User = {
     id: number
@@ -8,7 +8,7 @@ type User = {
     created_at: string
 }
 
-export default async function handler(event: APIGatewayProxyEvent) {
+export default async function getUser(event: APIGatewayProxyEvent) {
     const id = event.pathParameters?.id
     console.log(`Fetching user with ID: ${id}`)
 
@@ -21,10 +21,17 @@ export default async function handler(event: APIGatewayProxyEvent) {
     }
 
     try {
-        const user = await selectOne<User>(
-            'SELECT id, name, email, created_at FROM users WHERE id = :id',
-            { id: Number(id) }
-        )
+        // const user = await selectOne<User>(
+        //     'SELECT id, name, email, created_at FROM users WHERE id = :id',
+        //     { id: Number(id) }
+        // )
+
+        const user = {
+            id: Number(id),
+            name: "John Doe",
+            email: "",
+            created_at: new Date().toISOString()
+        }
 
         if (!user) {
             return {

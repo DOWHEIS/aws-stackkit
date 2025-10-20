@@ -4,7 +4,6 @@ import { Generator } from './Generator.js'
 import { ApiDefinition } from '../models/ApiDefinition.js'
 
 export class CdkAppGenerator implements Generator {
-
     constructor(private templateService: TemplateService) {}
 
     async generate(api: ApiDefinition, outputDir: string): Promise<void> {

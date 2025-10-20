@@ -1,0 +1,17 @@
+const vpc = Vpc.fromVpcAttributes(this, '{{stackName}}Vpc', {
+vpcId,
+availabilityZones: ['us-east-2a', 'us-east-2b'],
+privateSubnetIds: [privateSubnet1, privateSubnet2],
+});const secret = Secret.fromSecretCompleteArn(this, '{{stackName}}DbSecret', dbSecretArn)
+const cluster = DatabaseCluster.fromDatabaseClusterAttributes(this, '{{stackName}}Cluster', {
+clusterIdentifier: clusterIdentifier,
+port: 5432
+})
+const lambdaSg = new SecurityGroup(this, '{{stackName}}LambdaSg', {
+vpc,
+allowAllOutbound: true,
+description: 'Security group for Lambda functions in {{stackName}} stack'
+})
+const dbSecurityGroup = SecurityGroup.fromSecurityGroupId(this, '{{stackName}}DbSg', dbSecurityGroupId)
+
+dbSecurityGroup.addIngressRule(lambdaSg, Port.tcp(5432), 'Allow Lambda access to DB')

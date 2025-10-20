@@ -26,7 +26,8 @@
     "../dist",
     "./node_modules",
     "../cdk",
-    "../test"
+    "../test",
+    "core-infra"
   ],
   "ts-node": {
     "esm": true,

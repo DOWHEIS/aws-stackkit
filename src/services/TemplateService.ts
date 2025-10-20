@@ -2,7 +2,7 @@ import {fileURLToPath} from "url";
 import path from "path";
 import Mustache from "mustache";
 import {readFile, mkdir, writeFile} from "fs/promises";
-
+import {logger} from "./Logger.js";
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -20,7 +20,7 @@ export class TemplateService {
         await mkdir(dir, { recursive: true })
 
         await writeFile(outputPath, content, 'utf-8')
-        console.log(`Generated ${outputPath}`)
+        logger.info(`Generated ${outputPath}`)
     }
 
     async render(templateName: string, context: any): Promise<string> {

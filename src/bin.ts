@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-console.log('Starting aws-stackkit CLI...')
-import { register } from 'tsx/esm/api'
-register()
-console.log('Registered TSX for ESM support')
+
+console.log('Starting AWS StackKit CLI...')
 
 import { Command } from 'commander'
 import { scaffold } from './cli/scaffold.js'
@@ -11,12 +9,14 @@ import { migrate } from './cli/migrate.js'
 import { rollback } from './cli/rollback.js'
 import { initCore } from './cli/initCore.js'
 import { dev } from './cli/dev.js'
+import {createMigration} from "./cli/createMigration.js";
+import {migrateRollback} from "./cli/migrateRollback.js";
 
 const program = new Command()
 
 program
-    .name('aws-stackkit')
-    .description('Build and deploy real AWS Lambda + API Gateway stacks from a single typescript config file. Includes local dev server, migrations, and CDK Infra.')
+    .name('api-sdk')
+    .description('AWS StackKit CLI')
     .version('1.0.0')
 
 program
@@ -53,12 +53,24 @@ program
         process.env.SDK_DEV_SERVER = '1';
         dev();
     })
+
 program.exitOverride((err) => {
     if (err.exitCode === 0) return
     if (err.code === 'commander.helpDisplayed') return
     console.error('Command failed:', err.message)
     process.exit(1)
 })
+
+program
+    .command('create:migration <name>')
+    .description('Create a new SQL migration file')
+    .action(createMigration)
+
+program
+    .command('migrate:rollback')
+    .description('Rollback database migrations')
+    .option('--steps <n>', 'Number of migrations to rollback', '1')
+    .action((options) => migrateRollback(options))
 
 program.parse()
 

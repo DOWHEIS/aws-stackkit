@@ -1,21 +1,41 @@
 {
   "name": "aws-stackkit",
-  "version": "1.0.33",
+  "version": "1.0.38",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
     "aws-stackkit": "dist/bin.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./db": {
+      "types": "./dist/api/db.d.ts",
+      "default": "./dist/api/db.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc && npm run copy-templates",
+    "build": "npm run clean && tsc && npm run copy-templates && npm run copy-docker",
+    "postbuild": "chmod +x dist/bin.js",
+    "clean:tarballs": "rm -f aws-stackkit-*.tgz",
     "copy-templates": "cp -r ./templates dist/templates/",
-    "dev:scaffold": "tsx src/bin.ts scaffold",
+    "copy-docker": "mkdir -p dist/dev/db && cp ./dev/db/docker-compose.yml dist/dev/db/docker-compose.yml",
+    "copy-core-infra": "cp -r ./core-infra dist/core-infra",
+    "dev:scaffold": "tsx bin.ts scaffold",
+    "dev:invoke": "tsx src/bin.ts invoke /hello",
     "dev:migrate": "tsx src/bin.ts migrate",
-    "dev:core:init": "tsx src/bin.ts core:init",
+    "dev:core:init": "tsx bin.ts core:init",
     "dev": "SDK_DEV_SERVER=1 tsx src/bin.ts dev"
   },
-  "type": "module",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -23,14 +43,18 @@
   "dependencies": {
     "@aws-sdk/client-rds-data": "^3.817.0",
     "@aws-sdk/client-secrets-manager": "^3.826.0",
+    "@aws-sdk/client-ssm": "^3.840.0",
     "aws-lambda": "^1.0.7",
+    "chokidar": "^4.0.3",
     "commander": "^14.0.0",
     "dotenv": "^16.5.0",
     "fs-extra": "^11.3.0",
+    "madge": "^8.0.0",
     "mustache": "^4.2.0",
     "pg": "^8.16.0",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "zod": "^4.0.5"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.149",
@@ -38,10 +62,9 @@
     "@types/madge": "^5.0.3",
     "@types/mustache": "^4.2.6",
     "@types/node": "^22.15.24",
-    "@types/pg": "^8.15.2"
-  },
-  "files": [
-    "dist/",
-    "../README.md"
-  ]
+    "@types/pg": "^8.15.2",
+    "@typescript-eslint/eslint-plugin": "^8.36.0",
+    "@typescript-eslint/parser": "^8.36.0",
+    "eslint": "^9.30.1"
+  }
 }

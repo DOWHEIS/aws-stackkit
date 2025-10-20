@@ -1,0 +1,7 @@
+new CustomResource(this, 'Custom::{{stackName}}CreateDb', {
+serviceToken: createDbServiceToken,
+resourceType: 'Custom::CreateDatabase',
+properties: {
+DB_NAME: '{{dbName}}'
+}
+})

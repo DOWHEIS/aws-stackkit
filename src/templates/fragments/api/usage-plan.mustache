@@ -1,0 +1,24 @@
+const usagePlan = new UsagePlan(this, '{{stackName}}UsagePlan', {
+name: '{{apiName}}UsagePlan',
+{{#defaultThrottle}}
+    throttle: {
+    rateLimit: {{rateLimit}},
+    burstLimit: {{burstLimit}}
+    },
+{{/defaultThrottle}}
+apiStages: [{
+api: api,
+stage: api.deploymentStage,
+{{#perMethodThrottles.length}}
+    throttle: [
+    {{#perMethodThrottles}}
+        { method: {{methodVar}}, throttle: { rateLimit: {{rateLimit}}, burstLimit: {{burstLimit}} } }{{^last}},{{/last}}
+    {{/perMethodThrottles}}
+    ]
+{{/perMethodThrottles.length}}
+}],
+});
+
+{{#keyIndices}}
+    usagePlan.addApiKey(apiKey{{index}})
+{{/keyIndices}}
