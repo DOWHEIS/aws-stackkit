@@ -1,3 +1,7 @@
+
+
+// this is just an example, to get the project to run locally its best to get out of the mono repo and npm link it with the command I gave in the readme
+
 import {createApi} from "aws-stackkit";
 import createUser from "./functions/createUser";
 import listUsers from "./functions/listUsers";
