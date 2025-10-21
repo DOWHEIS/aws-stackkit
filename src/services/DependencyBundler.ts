@@ -259,11 +259,9 @@ export class DependencyBundler {
             }
         }
 
-        // NEW: Update npm dependencies with subpath support
         for (const pkg of npmDeps) {
             if (!pkg.isPrivate || !DependencyBundler.sharedFiles.has(pkg.packageName)) continue
 
-            // Handle packages with subpaths
             if (pkg.subpaths && pkg.subpaths.length > 0) {
                 logger.info(`Processing subpath imports for ${pkg.packageName}: [${pkg.subpaths.join(', ')}]`)
 
@@ -272,13 +270,11 @@ export class DependencyBundler {
                     const escapedPackage = pkg.packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
                     const escapedSubpath = subpath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-                    // Pattern to match: from "aws-stackkit/db"
                     const subpathPattern = new RegExp(
                         `(from\\s+["'])${escapedPackage}${escapedSubpath}(["'])`,
                         'g'
                     )
 
-                    // NEW: Rewrite to shared location with subpath preserved
                     const newImportPath = `${sharedPathPrefix}/${pkg.packageName}${subpath}`
 
                     const before = content
@@ -288,7 +284,6 @@ export class DependencyBundler {
                         logger.info(`✓ Updated subpath import: "${fullImport}" -> "${newImportPath}"`)
                     }
 
-                    // Also handle require() and dynamic import()
                     const requirePattern = new RegExp(
                         `(require\\s*\\(\\s*["'])${escapedPackage}${escapedSubpath}(["']\\s*\\))`,
                         'g'
@@ -303,7 +298,6 @@ export class DependencyBundler {
                 }
             }
 
-            // Handle selective imports with export source maps (existing logic)
             if (pkg.importedItems && pkg.exportSourceMap && !pkg.importedItems.includes('*')) {
                 const importRegex = new RegExp(
                     `(import\\s+{([^}]+)}\\s+from\\s+["'])${pkg.packageName}(["'])`,
@@ -336,7 +330,6 @@ export class DependencyBundler {
                     }
                 })
             } else {
-                // Handle base package imports (no subpath, no selective mapping)
                 const newImportBase = `${sharedPathPrefix}/${pkg.packageName}`
 
                 const patterns = [
