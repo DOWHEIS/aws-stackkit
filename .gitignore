@@ -12,3 +12,5 @@ dist/
 .idea/
 
 aws-stackkit-*.tgz
+
+src/package-lock.json

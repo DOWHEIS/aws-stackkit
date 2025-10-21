@@ -32,53 +32,49 @@ export async function dev() {
         }
     }, 2000)
 
-    logger.section('[dev] Watching patterns:')
-    const watchGlobs = [
-        paths.user('api.config.ts'),
-        paths.user('api.config.mts'),
-        paths.user('api.config.cts'),
-        paths.user('src/**/*.ts'),
-        paths.user('src/**/*.tsx'),
-        paths.user('functions/**/*.ts'),
-        paths.user('functions/**/*.tsx'),
-        paths.user('migrations/**/*.ts'),
-        paths.user('migrations/**/*.sql'),
-    ]
-    watchGlobs.forEach(g => logger.info(`- ${g}`))
-
     const changedFiles = new Set<string>()
     let debounce: NodeJS.Timeout | null = null
     let isScaffolding = false
     let isShuttingDown = false
 
-    const watcher = chokidar.watch(watchGlobs, {
+    const watcher = chokidar.watch([
+        '**/*.ts',
+        '**/*.sql',
+    ], {
         ignored: [
             '**/node_modules/**',
             '**/.cdk_dev/**',
-            '**/.git/**',
             '**/cdk/**',
+            '**/.git/**',
             '**/.idea/**',
-            '**/.sdk-dev-ports.json',
+            '**/.vscode/**',
+            '**/dist/**',
+            '**/build/**',
+            '**/out/**',
+            '**/tmp/**',
             '**/pgdata/**',
             '**/*.log',
             '**/.DS_Store',
-            '**/dist/**',
-            '**/build/**',
-            '**/.next/**',
-            '**/out/**',
-            '**/coverage/**',
-            '**/.turbo/**',
-            '**/tmp/**',
+            '**/.sdk-dev-ports.json',
         ],
         ignoreInitial: true,
         awaitWriteFinish: { stabilityThreshold: 200, pollInterval: 100 },
         persistent: true,
         followSymlinks: false,
-        depth: 10,
         ignorePermissionErrors: true,
     })
 
+    watcher.on('ready', () => {
+        const watched = watcher.getWatched()
+        logger.info(`[WATCHER] Watching ${Object.keys(watched).length} directories`)
+    })
+
+    watcher.on('error', (error) => {
+        logger.error('[WATCHER] Chokidar error:', error)
+    })
+
     watcher.on('all', (_event, filePath) => {
+        logger.info(`[WATCHER EVENT] ${_event}: ${filePath}`)
         if (isShuttingDown) return
         changedFiles.add(filePath)
         if (debounce) clearTimeout(debounce)
