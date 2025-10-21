@@ -45,7 +45,7 @@ export class HandlerWrapperGenerator implements Generator {
         }
     }
 
-    private async generateSingleWrapper(route: ProcessedRouteConfig, wrappedDir: string) {
+    async generateSingleWrapper(route: ProcessedRouteConfig, wrappedDir: string) {
         const routeName = this.getRouteName(route.lambda)
         const routeDir = path.join(wrappedDir, routeName)
         logger.info(`Generated wrapped handler for ${routeName}`)
@@ -55,35 +55,14 @@ export class HandlerWrapperGenerator implements Generator {
         logger.substep(`Bundling dependencies for ${routeName}...`)
         let bundleResult: BundleResult
 
-        let indexPath = 'index.ts'
+        // No versioning in dev or prod - just use the route directory
+        bundleResult = await this.bundler.bundleHandler(
+            route.lambda,
+            routeDir,
+            wrappedDir,
+        )
 
-        if (this.isDev) {
-            const versionTag = `${Date.now()}.${randomUUID()}`
-            const versionDir = path.join(routeDir, versionTag)
-            await fs.ensureDir(versionDir)
-
-            bundleResult = await this.bundler.bundleHandler(
-                route.lambda,
-                versionDir,
-                versionDir,
-            )
-            indexPath = `${versionTag}/index.ts`
-
-            const existingVersions = await fs.readdir(routeDir)
-            await Promise.all(existingVersions.map(async (v) => {
-                if (v === versionTag) return
-                const full = path.join(routeDir, v)
-                const stat = await fs.stat(full).catch(() => null)
-                if (stat?.isDirectory()) {
-                    logger.substep(`[HMR] Removing old version ${v} for route ${routeName}`)
-                    await fs.remove(full)
-                }
-            }))
-        } else {
-            bundleResult = await this.bundler.bundleHandler(route.lambda, routeDir, wrappedDir)
-        }
-
-        await this.generateWrapperIndex(route, routeDir, indexPath)
+        await this.generateWrapperIndex(route, routeDir)
 
         const totalDeps = bundleResult.npmDependencies.length +
             (bundleResult.addedDependencies ? Object.keys(bundleResult.addedDependencies).length : 0)
@@ -133,9 +112,13 @@ export class HandlerWrapperGenerator implements Generator {
         }
     }
 
-    private async generateWrapperIndex(route: ProcessedRouteConfig, routeDir: string, indexPath: string): Promise<void> {
-        // change to builder patten in next major version
-        const wrapHandlerPath = this.isDev ? '../../../helpers/wrapHandler' : '../../helpers/wrapHandler'
+    private async generateWrapperIndex(route: ProcessedRouteConfig, routeDir: string): Promise<void> {
+        const wrapHandlerPath = '../../helpers/wrapHandler'
+
+        const handlerImportPath = this.isDev
+            ? path.relative(routeDir, route.lambda).replace(/\\/g, '/').replace(/\.ts$/, '')
+            : './handler'
+
         const authType = route.auth?.type === 'apiKey' ? 'apiKey' : undefined
         const required = route.auth?.required
         let authConfig: string
@@ -144,8 +127,10 @@ export class HandlerWrapperGenerator implements Generator {
         } else {
             authConfig = 'auth: false'
         }
-        const wrapperContent = `// Auto-generated wrapper\nimport handler from './handler'\nimport { wrapHandler } from '${wrapHandlerPath}'\n\nexport const main = wrapHandler(handler, { ${authConfig} })\n`
-        await fs.writeFile(path.join(routeDir, indexPath), wrapperContent, 'utf-8')
+
+        const wrapperContent = `// Auto-generated wrapper\nimport handler from '${handlerImportPath}'\nimport { wrapHandler } from '${wrapHandlerPath}'\n\nexport const main = wrapHandler(handler, { ${authConfig} })\n`
+
+        await fs.writeFile(path.join(routeDir, 'index.ts'), wrapperContent, 'utf-8')
     }
 
     private getRouteName(lambdaPath: string): string {

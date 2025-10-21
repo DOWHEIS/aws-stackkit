@@ -150,7 +150,7 @@ export class HmrIpcClient {
             const message: ReloadMessage = { type: 'reload', files: changedFiles, timestamp: Date.now() }
             this.client.write(JSON.stringify(message) + '\n', (err) => {
                 if (err) { logger.error('[HMR] Failed to send reload signal:', err.message); this.connected = false }
-                else { logger.info(`[HMR] Sent reload signal for ${changedFiles.length} files`) }
+                else { logger.info(`[HMR] Sent reload signal for ${changedFiles.length} file(s)`) }
             })
         } catch (err: any) {
             logger.error('[HMR] Error sending reload:', err.message)

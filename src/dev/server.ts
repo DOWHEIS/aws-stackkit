@@ -128,7 +128,6 @@ async function main() {
     }
 
     ipcServer.on('reload', async (changedFiles: string[]) => {
-        logger.info(`[HMR] Reload requested for ${changedFiles.length} file(s):`)
         changedFiles.forEach(f => logger.substep(f))
         try {
             const { apiDefinition: newConfig } = await loadConfig()
@@ -210,6 +209,9 @@ async function main() {
         if (actualPort !== DEFAULT_PORT) logger.warn(`Port ${DEFAULT_PORT} was busy, using port ${actualPort} instead`)
         logger.section(`Dev server listening at http://localhost:${actualPort}`)
         logger.info(`[HMR] IPC server on port ${actualIpcPort}`)
+        logger.info('Debugger: Attach to localhost:9229 to debug lambda handlers')
+        logger.info('WebStorm: Run > Attach to Node.js/Chrome > Port 9229')
+        logger.info('VSCode: Use "Attach" launch config with port 9229')
         logger.info('Press Ctrl+C to stop')
     })
 }

@@ -16,7 +16,7 @@ export class DependencyBundler {
     private isDev = process.env.SDK_DEV_SERVER === '1'
 
     private getSharedPathPrefix(): string {
-        return this.isDev ? './shared' : '../shared'
+        return '../shared'
     }
 
     async bundleHandler(
@@ -28,9 +28,13 @@ export class DependencyBundler {
 
         logger.info(`Found ${analysis.localDependencies.length} local dependencies and ${analysis.npmDependencies.length} npm dependencies for ${path.basename(handlerPath)}`)
 
-        const entryFile = path.join(outputDir, 'handler.ts')
-
-        await fs.copy(handlerPath, entryFile)
+        let entryFile: string
+        if (!this.isDev) {
+            entryFile = path.join(outputDir, 'handler.ts')
+            await fs.copy(handlerPath, entryFile)
+        } else {
+            entryFile = handlerPath
+        }
 
         const sharedDir = path.join(wrappedDir, 'shared')
         await fs.ensureDir(sharedDir)
@@ -61,7 +65,9 @@ export class DependencyBundler {
             discoveredDependencies.set(pkg.packageName, pkg.version || 'latest')
         }
 
-        await this.updateImports(entryFile, analysis.localDependencies, analysis.npmDependencies)
+        if (!this.isDev) {
+            await this.updateImports(entryFile, analysis.localDependencies, analysis.npmDependencies)
+        }
 
         const addedDependencies: Record<string, string> = {}
         for (const [name, version] of discoveredDependencies) {
@@ -69,7 +75,7 @@ export class DependencyBundler {
         }
 
         return {
-            copiedFiles: [entryFile],
+            copiedFiles: this.isDev ? [] : [entryFile],
             entryFile,
             npmDependencies: publicPackages,
             addedDependencies

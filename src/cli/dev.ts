@@ -2,23 +2,22 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { spawn } from 'child_process'
 import chokidar from 'chokidar'
-import { scaffoldDev } from '../internal/scaffoldDev.js'
 import { HmrIpcClient } from "../dev/HmrIPCHandler.js"
-import { scaffold } from "./scaffold.js"
 import { PathResolver } from "../internal/PathResolver.js"
 import { logger } from '../services/Logger.js'
+import {scaffoldDev} from "../internal/scaffoldDev.js";
+const { incrementalScaffold } = await import('../internal/incrementalScaffold.js')
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const cwd = process.cwd()
 const paths = new PathResolver(import.meta.url)
 
 export async function dev() {
     const cdkDevDir = paths.user('.cdk_dev')
-    await scaffold(cdkDevDir)
+    let currentConfig = await scaffoldDev(cdkDevDir)
 
     const devScript = path.resolve(__dirname, '../dev/server.js')
-    const serverProcess = spawn('tsx', [devScript], {
+    const serverProcess = spawn('tsx', ['--inspect=9229', devScript], {
         stdio: 'inherit',
         env: { ...process.env, SDK_DEV_SERVER: '1' },
         detached: false,
@@ -86,7 +85,8 @@ export async function dev() {
             files.forEach(f => logger.substep(f))
             isScaffolding = true
             try {
-                await scaffoldDev(cdkDevDir)
+                currentConfig = await incrementalScaffold(files, cdkDevDir, currentConfig)
+
                 await new Promise(r => setTimeout(r, 100))
                 ipc.sendReload(files)
             } catch (err) {
@@ -129,7 +129,7 @@ export async function dev() {
             process.exit(0)
         }
 
-    ;['SIGINT','SIGTERM','SIGHUP'].forEach(signal => {
+    ['SIGINT','SIGTERM','SIGHUP'].forEach(signal => {
         process.once(signal, async () => {
             logger.info(`\nReceived ${signal}`)
             await cleanup()

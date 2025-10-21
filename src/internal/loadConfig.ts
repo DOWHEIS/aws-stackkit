@@ -33,8 +33,6 @@ export async function loadConfig(): Promise<{ apiDefinition: ApiDefinition }> {
         const configUrl = pathToFileURL(configPath).href + `?t=${Date.now()}`;
         const configModule = await import(configUrl)
 
-        logLoadedConfig(configModule)
-
         const api = configModule.default || Object.values(configModule)[0]
 
         if (!api) {
@@ -42,7 +40,6 @@ export async function loadConfig(): Promise<{ apiDefinition: ApiDefinition }> {
         }
 
         if (typeof api.getDefinition === 'function') {
-            ApiDefinition.logImportMap()
             const apiDefinition = api.getDefinition(ApiDefinition)
 
             if (!(apiDefinition instanceof ApiDefinition)) {

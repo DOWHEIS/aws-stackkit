@@ -2,8 +2,9 @@ import fs from 'fs-extra'
 import { loadConfig } from './loadConfig.js'
 import { ApiBuilder } from '../core/ApiBuilder.js'
 import { logger } from '../services/Logger.js'
+import type { ApiDefinition } from '../models/ApiDefinition.js'
 
-export async function scaffoldDev(outputDir: string = '.cdk_dev'): Promise<void> {
+export async function scaffoldDev(outputDir: string = '.cdk_dev'): Promise<ApiDefinition> {
     try {
         logger.section('[dev] Loading api.config.ts...')
         const { apiDefinition } = await loadConfig()
@@ -13,6 +14,8 @@ export async function scaffoldDev(outputDir: string = '.cdk_dev'): Promise<void>
 
         const builder = new ApiBuilder(apiDefinition)
         await builder.generateDevOnly(outputDir)
+
+        return apiDefinition
 
     } catch (err) {
         logger.error('[dev] scaffoldDev failed:', err)

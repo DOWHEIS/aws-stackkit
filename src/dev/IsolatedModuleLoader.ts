@@ -36,7 +36,7 @@ export class IsolatedModuleLoader {
         const timestamp = this.moduleTimestamps.get(absPath) || Date.now();
         const url = pathToFileURL(absPath).href + `?t=${timestamp}`;
 
-        logger.info(`[Module Loader] Importing ${path.basename(absPath)} with timestamp ${timestamp}`)
+        logger.info(`[Module Loader] Importing ${path.basename(absPath)}`)
 
         const handlerMod = await this.importWithRetry(url, absPath);
 

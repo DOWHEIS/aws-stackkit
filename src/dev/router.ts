@@ -18,38 +18,11 @@ function resolveIndexForRoute(routeName: string): string {
         throw new Error(`Missing folder for route "${routeName}" at ${resolved}`)
     }
 
-    // internal routes are never versioned
-    if (routeName.startsWith('__internal__/')) {
-        const idx = path.join(resolved, 'index.ts')
-        if (!fs.existsSync(idx)) {
-            throw new Error(`Missing static index.ts for internal route at ${idx}`)
-        }
-        return idx
-    }
-
-    // user routes: find versioned subdirs
-    const dirs = fs.readdirSync(resolved)
-        .map(name => {
-            const full = path.join(resolved, name)
-            return fs.statSync(full).isDirectory() ? name : null
-        })
-        .filter((n): n is string => Boolean(n))
-
-    if (dirs.length === 0) {
-        throw new Error(`No versioned directories in ${resolved}`)
-    }
-
-    dirs.sort((a, b) => {
-        const ta = parseInt(a.split('.')[0], 10)
-        const tb = parseInt(b.split('.')[0], 10)
-        return ta - tb
-    })
-
-    const latest = dirs[dirs.length - 1]
-    const indexPath = path.join(resolved, latest, 'index.ts')
+    const indexPath = path.join(resolved, 'index.ts')
     if (!fs.existsSync(indexPath)) {
-        throw new Error(`Missing index.ts in ${path.join(resolved, latest)}`)
+        throw new Error(`Missing index.ts for route at ${indexPath}`)
     }
+
     return indexPath
 }
 
